@@ -1,0 +1,125 @@
+# Belegwirtschaft — lokales, selbst gehostetes Belegmanagement auf Basis von Docspell.
+#
+# WICHTIG: Die Docspell-Images/Env-Var-Namen unten sind nach bestem Wissen aus der
+# offiziellen Docspell-Dokumentation zusammengestellt (https://docspell.org/docs/install/docker/).
+# In dieser Sandbox war der Zugriff auf docspell.org netzwerkseitig blockiert, daher bitte
+# vor dem ersten Start einmal gegen die aktuelle Doku gegenchecken (Image-Tags, ggf. neue
+# Env-Var-Namen). Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
+#
+# Alle Daten (Belege, Datenbank, Sessions) landen ausschliesslich in ./data auf diesem Host.
+# Es gibt keine Verbindung nach aussen ausser: Gmail-API (Google) und amazon.de — beides
+# nur von den jeweiligen Connector-Containern aus, niemals vom Docspell-Kern selbst.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  solr:
+    image: solr:9
+    restart: unless-stopped
+    command: ["solr-precreate", "docspell"]
+    volumes:
+      - ./data/solr:/var/solr
+    networks:
+      - internal
+
+  docspell-restserver:
+    image: docspell/restserver:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+      - solr
+    environment:
+      DOCSPELL_SERVER_BACKEND_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      DOCSPELL_SERVER_BACKEND_JDBC_USER: ${POSTGRES_USER}
+      DOCSPELL_SERVER_BACKEND_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
+      DOCSPELL_SERVER_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_ENABLED: "true"
+      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_BASIC_ENABLED: "false"
+      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_HEADER_HEADER_VALUE: ${DOCSPELL_INTEGRATION_SECRET}
+      DOCSPELL_SERVER_BACKEND_SIGNUP_MODE: closed
+    volumes:
+      - ./data/docspell-files:/opt/docspell/files
+      - ./docspell/docspell-server.conf:/opt/docspell.conf:ro
+    ports:
+      # Nur an localhost binden, nicht am gesamten Netzwerk — Zugriff per SSH-Tunnel
+      # oder VPN, falls du von ausserhalb zugreifen willst.
+      - "127.0.0.1:7880:7880"
+    networks:
+      - internal
+
+  docspell-joex:
+    image: docspell/joex:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+      - solr
+    environment:
+      DOCSPELL_JOEX_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      DOCSPELL_JOEX_JDBC_USER: ${POSTGRES_USER}
+      DOCSPELL_JOEX_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
+      DOCSPELL_JOEX_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+    volumes:
+      - ./data/docspell-files:/opt/docspell/files
+      - ./docspell/docspell-joex.conf:/opt/docspell.conf:ro
+    networks:
+      - internal
+
+  connector-gmail:
+    build:
+      context: .
+      dockerfile: connectors/gmail/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - docspell-restserver
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
+      DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
+      GMAIL_POLL_INTERVAL_SECONDS: ${GMAIL_POLL_INTERVAL_SECONDS}
+      GMAIL_LABEL: ${GMAIL_LABEL}
+    volumes:
+      - ./connectors/gmail/secrets:/secrets
+      - ./config/sources.yaml:/config/sources.yaml:ro
+      - ./data/state:/state
+    networks:
+      - internal
+      - internet
+
+  connector-amazon:
+    build:
+      context: .
+      dockerfile: connectors/amazon/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - docspell-restserver
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
+      DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
+      AMAZON_DOMAIN: ${AMAZON_DOMAIN}
+      AMAZON_POLL_INTERVAL_SECONDS: ${AMAZON_POLL_INTERVAL_SECONDS}
+      AMAZON_ORDER_LOOKBACK_DAYS: ${AMAZON_ORDER_LOOKBACK_DAYS}
+    volumes:
+      - ./connectors/amazon/secrets:/secrets
+      - ./data/state:/state
+    networks:
+      - internal
+      - internet
+
+networks:
+  # Docspell-Kern + DB + Solr reden nur miteinander, kein Internetzugriff nötig/erlaubt.
+  internal:
+    internal: true
+  # Nur die Connectors hängen zusätzlich hier dran, um Gmail/Amazon zu erreichen.
+  internet:
+    driver: bridge
