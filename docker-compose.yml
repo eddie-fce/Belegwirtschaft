@@ -7,8 +7,16 @@
 # Env-Var-Namen). Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
 #
 # Alle Daten (Belege, Datenbank, Sessions) landen ausschliesslich in ./data auf diesem Host.
-# Es gibt keine Verbindung nach aussen ausser: Gmail-API (Google) und amazon.de — beides
-# nur von den jeweiligen Connector-Containern aus, niemals vom Docspell-Kern selbst.
+# Es gibt keine Verbindung nach aussen ausser: Gmail-API (Google) und, falls per Profil
+# aktiviert, Amazon — beides nur von den jeweiligen Connector-Containern aus, niemals vom
+# Docspell-Kern selbst.
+#
+# Standardmässig (`docker compose up -d`) laufen nur Docspell + Gmail-Connector +
+# Dropzone-Connector. Amazon-Belege kommen ohne Amazon-Entwicklerzugang manuell über
+# Business Analytics -> Dropzone rein (siehe connectors/amazon-business/README.md).
+# Die beiden Amazon-Connector-Container sind hinter Docker-Compose-Profilen versteckt
+# und nur für später gedacht, falls ihr doch Entwicklerzugang bekommt bzw. ein privates
+# Amazon-Konto anbinden wollt.
 
 services:
   db:
@@ -103,10 +111,15 @@ services:
       - internal
       - internet
 
-  # Amazon Business: offizielle API (Reconciliation + Document API, LWA-OAuth2)
-  # statt Browser-Scraping — siehe connectors/amazon-business/README.md für die
-  # nötige Entwickler-Registrierung bei Amazon.
+  # Amazon Business über die offizielle API (Reconciliation + Document API,
+  # LWA-OAuth2) — braucht eine Registrierung als Amazon-Business-API-Entwickler
+  # (Identitätsprüfung durch Amazon). Ohne diese Registrierung nicht nutzbar,
+  # deshalb standardmässig AUS. Für den Alltag ohne Entwicklerzugang: manueller
+  # Bulk-Export über "Business Analytics" + Dropzone-Connector, siehe
+  # connectors/amazon-business/README.md (Abschnitt "Ohne Entwickler-Zugang").
+  # Aktivieren: `docker compose --profile amazon-business-api up -d connector-amazon-business`
   connector-amazon-business:
+    profiles: ["amazon-business-api"]
     build:
       context: .
       dockerfile: connectors/amazon-business/Dockerfile

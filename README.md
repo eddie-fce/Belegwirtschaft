@@ -1,10 +1,11 @@
 # Belegwirtschaft
 
-Lokal gehostetes Belegmanagement für die Firma: Belege aus Gmail, Amazon
-Business und manuellem Scannen per Handy werden automatisch eingesammelt, per
-OCR durchsuchbar gemacht und archiviert. Alles läuft auf eigener Hardware —
-keine Cloud, keine Dritt-Dienste ausser den Quellen selbst (Gmail-API, Amazon
-Business API, optional ein selbst gehosteter ntfy-Server für Alarme).
+Lokal gehostetes Belegmanagement für die Firma: Belege aus Gmail werden
+automatisch eingesammelt, Amazon-Business-Rechnungen per monatlichem
+Bulk-Export + Dropzone, dazu manuelles Scannen per Handy — alles per OCR
+durchsuchbar gemacht und archiviert. Alles läuft auf eigener Hardware — keine
+Cloud, keine Dritt-Dienste ausser den Quellen selbst (Gmail-API, optional ein
+selbst gehosteter ntfy-Server für Alarme).
 
 ## Architektur
 
@@ -14,11 +15,11 @@ Business API, optional ein selbst gehosteter ntfy-Server für Alarme).
                     │                                                 │
   Gmail (API)───────┼──▶ connector-gmail             ──┐             │
                     │                                   │             │
-  Amazon Business───┼──▶ connector-amazon-business    ──┼──▶ Docspell │
-   (offizielle API,  │                                   │  Integration│
-    LWA-OAuth2)       │                                   │  Endpoint   │
-                    │                                   │             │
-  Handy (Syncthing)──┼──▶ connector-dropzone           ──┘             │
+  Business Analytics┼──▶ (manueller ZIP-Export,       ──┤             │
+   (monatlich, paar   │    entpacken in ./data/dropzone) │             │
+    Klicks)            │                                   ├──▶ Docspell │
+                    │                                   │  Integration│
+  Handy (Syncthing)──┼──▶ connector-dropzone           ──┘  Endpoint   │
                     │                                   │             │
                     │                                   ▼             │
                     │                            docspell-restserver   │
@@ -37,8 +38,14 @@ Business API, optional ein selbst gehosteter ntfy-Server für Alarme).
                                                         bei gestörten Connectors
 ```
 
-(Für private, nicht-Business-Amazon-Konten gibt es zusätzlich einen
-Playwright-basierten Fallback-Connector, siehe unten — standardmässig aus.)
+Amazon läuft standardmässig **ohne eigenen Connector-Container**: Ohne
+Amazon-Entwicklerzugang gibt es keine stabile Automatisierung, die ich blind
+gegen Amazons UI hätte bauen können, ohne sie live zu testen — stattdessen ein
+eingebauter Amazon-Business-Bulk-Export (ein paar Klicks im Monat) direkt in
+den ohnehin vorhandenen Dropzone-Ordner. Zwei optionale Connector-Container
+liegen für später bereit (Docker-Compose-Profile, siehe unten): die
+offizielle Amazon-Business-API (falls ihr doch Entwicklerzugang bekommt) und
+ein Playwright-Fallback für private Amazon-Konten.
 
 **Kernstück ist [Docspell](https://docspell.org)**, kein Eigenbau: OCR,
 Volltextsuche, Tags/Correspondents/Ordner, Web-UI, ein lernender Klassifikator
@@ -84,26 +91,33 @@ Docspell auf einen Blick, ob der von OCR erkannte Betrag zum tatsächlichen
 Rechnungsbetrag aus der Mail passt, ohne ein separates, fehleranfälliges
 Abgleich-Tool zu brauchen. Setup: [`connectors/gmail/README.md`](connectors/gmail/README.md).
 
-### Amazon Business — offizielle API, kein Scraping
-Für **Amazon Business** (Firmenkonten) gibt es eine dokumentierte REST-API
-(Reconciliation API + Document API, authentifiziert über Login with Amazon /
-OAuth2) — genau wie bei Gmail also eine stabile, offizielle Schnittstelle statt
-Browser-Automatisierung. Erfordert eine einmalige Registrierung als
-Amazon-Business-API-Entwickler (Identitätsprüfung durch Amazon, dauert ggf.
-einige Tage). Setup: [`connectors/amazon-business/README.md`](connectors/amazon-business/README.md).
-**Best-effort-Hinweis:** Die exakten API-Endpunkt-Pfade in
-`amazon_business_connector.py` (mit `# ADJUST` markiert) konnten mangels
-Netzwerkzugriff auf `developer-docs.amazon.com` beim Bau dieses Repos nicht
-live verifiziert werden — vor dem ersten produktiven Lauf gegen die Doku
-prüfen, sobald ihr als Entwickler Zugriff darauf habt.
+### Amazon Business — manueller Bulk-Export + Dropzone (Standard, kein Entwicklerkonto nötig)
+Amazon Business hat einen eingebauten Sammel-Export: "Business Analytics" →
+Berichte → Bestellungen → Zeitraum wählen → Rechnungen als ZIP herunterladen
+(bis zu 2000 Dokumente pro Durchgang, bis zu 5 Jahre rückwirkend). ZIP
+entpacken, PDFs in `./data/dropzone` legen — der **Dropzone-Connector** (s.u.)
+lädt sie automatisch nach Docspell hoch. Praktisch als monatliche 5-Minuten-
+Aufgabe, ganz ohne API-Registrierung oder fragile Browser-Automatisierung.
+Details: [`connectors/amazon-business/README.md`](connectors/amazon-business/README.md).
+
+### Amazon Business — offizielle API (optional, braucht Entwicklerzugang)
+Für später, falls ihr doch als Amazon-Business-API-Entwickler registriert
+seid (Identitätsprüfung durch Amazon, kann mehrere Tage dauern): ein fertiger
+Connector nutzt die Reconciliation API + Document API über Login-with-Amazon-
+OAuth2 komplett automatisiert. Standardmässig aus (Docker-Compose-Profil
+`amazon-business-api`), da ohne Registrierung nicht nutzbar. **Best-effort-
+Hinweis:** Die exakten API-Endpunkt-Pfade in `amazon_business_connector.py`
+(mit `# ADJUST` markiert) konnten mangels Netzwerkzugriff auf
+`developer-docs.amazon.com` beim Bau dieses Repos nicht live verifiziert
+werden. Details: [`connectors/amazon-business/README.md`](connectors/amazon-business/README.md).
 
 ### Amazon (privat) — Fallback, standardmässig deaktiviert
-Für private (Nicht-Business-)Amazon-Konten ohne API-Zugriff: Playwright mit
-**deiner eigenen, manuell erstellten Login-Session** (Cookies — kein Passwort
-wird gespeichert oder automatisiert eingegeben). Fragiler als die
-Business-API (Layout-Änderungen, ablaufende Sessions), deshalb nur als
-Fallback gedacht und über das Docker-Compose-Profil `legacy-private-amazon`
-standardmässig aus. Aktivieren mit
+Für private (Nicht-Business-)Amazon-Konten: Playwright mit **deiner eigenen,
+manuell erstellten Login-Session** (Cookies — kein Passwort wird gespeichert
+oder automatisiert eingegeben). Fragiler als die beiden Wege oben
+(Layout-Änderungen, ablaufende Sessions), deshalb nur als Fallback gedacht
+und über das Docker-Compose-Profil `legacy-private-amazon` standardmässig
+aus. Aktivieren mit
 `docker compose --profile legacy-private-amazon up -d connector-amazon`.
 Setup: [`connectors/amazon/README.md`](connectors/amazon/README.md).
 
@@ -173,10 +187,11 @@ aktuellen Tag auf https://github.com/docspell/docspell/releases prüfen.
 - **Alles lokal**: Belege, Datenbank, OCR-Index, Sessions liegen ausschliesslich
   unter `./data` auf deinem Server/NAS. Keine Cloud-OCR, kein Upload an
   Dritt-Dienste.
-- **Minimalprinzip bei Zugriffsrechten**: Gmail-Scope ist rein lesend; die
-  Amazon-Business-API läuft über euren eigenen OAuth2-Consent, der
-  Fallback-Connector für private Konten speichert nur Session-Cookies, nie ein
-  Passwort.
+- **Minimalprinzip bei Zugriffsrechten**: Gmail-Scope ist rein lesend; der
+  Amazon-Bulk-Export ist ein manueller Download durch euch selbst (keine
+  gespeicherten Amazon-Zugangsdaten nötig); die optionale Amazon-Business-API
+  läuft über euren eigenen OAuth2-Consent; der Playwright-Fallback für
+  private Konten speichert nur Session-Cookies, nie ein Passwort.
 - **Verschlüsselung**: Für Belege mit personenbezogenen/sensiblen Daten
   empfiehlt sich zusätzlich Festplattenverschlüsselung des Host-Systems
   (LUKS/BitLocker/FileVault) — das deckt dieses Setup nicht selbst ab.
@@ -197,13 +212,21 @@ cd Belegwirtschaft
 ./scripts/setup.sh                        # legt ./data (inkl. Dropzone) und .env an
 # Danach je einmal lokal (nicht im Container):
 #   connectors/gmail/README.md            folgen (OAuth-Login)
-#   connectors/amazon-business/README.md  folgen (Amazon-Entwickler-Registrierung + OAuth-Login)
 #   connectors/dropzone/README.md         folgen (Syncthing einrichten, optional)
-docker compose up -d
-# Für ein privates (Nicht-Business-)Amazon-Konto zusätzlich/stattdessen:
-#   connectors/amazon/README.md folgen, dann:
-#   docker compose --profile legacy-private-amazon up -d connector-amazon
-open http://localhost:7880             # ersten Docspell-Account anlegen
+docker compose up -d                      # startet Docspell + Gmail + Dropzone
+open http://localhost:7880                # ersten Docspell-Account anlegen
+
+# Amazon Business: monatlich Business-Analytics-Export in ./data/dropzone
+# entpacken, siehe connectors/amazon-business/README.md — kein weiterer
+# Setup-Schritt nötig, der Dropzone-Connector läuft schon.
+#
+# Optional für später (nur falls zutreffend):
+#   Amazon-Business-API mit Entwicklerzugang:
+#     connectors/amazon-business/README.md (Weg B) folgen, dann
+#     docker compose --profile amazon-business-api up -d connector-amazon-business
+#   Privates (Nicht-Business-)Amazon-Konto:
+#     connectors/amazon/README.md folgen, dann
+#     docker compose --profile legacy-private-amazon up -d connector-amazon
 ```
 
 **Hinweis zur Docspell-Konfiguration:** `docker-compose.yml` und
@@ -225,9 +248,10 @@ connectors/
   common/                   # Docspell-Clients (Upload + authentifizierte Suche),
                              # Dedupe-/Fehler-State, ntfy-Alarme, Betrag-Extraktion
   gmail/                    # Gmail-Connector (OAuth2, gmail.readonly)
-  amazon-business/          # Amazon-Business-Connector (offizielle API, LWA-OAuth2)
+  amazon-business/          # Anleitung manueller Bulk-Export (Standard) + optionale
+                             # offizielle API (LWA-OAuth2, braucht Entwicklerzugang)
   amazon/                   # Fallback für private Konten (Playwright, standardmässig aus)
-  dropzone/                 # Manuelles Scannen per Handy (Syncthing-Ordner)
+  dropzone/                 # Manuelles Scannen per Handy + Amazon-Bulk-Export-Aufnahme
 scripts/
   setup.sh                  # Einmaliges Setup (Verzeichnisse, .env)
   backup.sh                 # Verschlüsseltes restic-Backup
