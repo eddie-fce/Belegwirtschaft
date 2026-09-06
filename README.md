@@ -1,10 +1,10 @@
 # Belegwirtschaft
 
-Lokal gehostetes Belegmanagement für die Firma: Belege aus Gmail, Amazon und
-manuellem Scannen per Handy werden automatisch eingesammelt, per OCR
-durchsuchbar gemacht und archiviert. Alles läuft auf eigener Hardware — keine
-Cloud, keine Dritt-Dienste ausser den Quellen selbst (Gmail-API, amazon.de,
-optional ein selbst gehosteter ntfy-Server für Alarme).
+Lokal gehostetes Belegmanagement für die Firma: Belege aus Gmail, Amazon
+Business und manuellem Scannen per Handy werden automatisch eingesammelt, per
+OCR durchsuchbar gemacht und archiviert. Alles läuft auf eigener Hardware —
+keine Cloud, keine Dritt-Dienste ausser den Quellen selbst (Gmail-API, Amazon
+Business API, optional ein selbst gehosteter ntfy-Server für Alarme).
 
 ## Architektur
 
@@ -12,30 +12,33 @@ optional ein selbst gehosteter ntfy-Server für Alarme).
                     ┌───────────────────────────────────────────────┐
                     │                  Docker-Host                    │
                     │                                                 │
-  Gmail (API)───────┼──▶ connector-gmail    ──┐                      │
-                    │                          │                      │
-  amazon.de─────────┼──▶ connector-amazon   ──┼──▶ Docspell           │
-   (Playwright,      │                          │   Integration       │
-    eigene Session)   │                          │   Endpoint          │
-                    │                          │                      │
-  Handy (Syncthing)──┼──▶ connector-dropzone ──┘                      │
-                    │                          │                      │
-                    │                          ▼                      │
-                    │                    docspell-restserver           │
-                    │                          │                      │
-                    │                    docspell-joex (OCR,           │
-                    │                     Klassifikator)                │
-                    │                          │                      │
-                    │                Postgres  +  Solr                 │
-                    │                (Volltextsuche)                    │
-                    │                          │                      │
-                    │                ./data/  (alle Belege,             │
-                    │                 DB, Sessions — nur hier)            │
+  Gmail (API)───────┼──▶ connector-gmail             ──┐             │
+                    │                                   │             │
+  Amazon Business───┼──▶ connector-amazon-business    ──┼──▶ Docspell │
+   (offizielle API,  │                                   │  Integration│
+    LWA-OAuth2)       │                                   │  Endpoint   │
+                    │                                   │             │
+  Handy (Syncthing)──┼──▶ connector-dropzone           ──┘             │
+                    │                                   │             │
+                    │                                   ▼             │
+                    │                            docspell-restserver   │
+                    │                                   │             │
+                    │                            docspell-joex (OCR,   │
+                    │                             Klassifikator)        │
+                    │                                   │             │
+                    │                        Postgres  +  Solr         │
+                    │                        (Volltextsuche)            │
+                    │                                   │             │
+                    │                        ./data/  (alle Belege,     │
+                    │                         DB, Sessions — nur hier)    │
                     └───────────────────────────────────────────────┘
                              ▲                        ▲
                      Web-UI: http://localhost:7880     optional: ntfy-Alarme
                                                         bei gestörten Connectors
 ```
+
+(Für private, nicht-Business-Amazon-Konten gibt es zusätzlich einen
+Playwright-basierten Fallback-Connector, siehe unten — standardmässig aus.)
 
 **Kernstück ist [Docspell](https://docspell.org)**, kein Eigenbau: OCR,
 Volltextsuche, Tags/Correspondents/Ordner, Web-UI, ein lernender Klassifikator
@@ -81,12 +84,28 @@ Docspell auf einen Blick, ob der von OCR erkannte Betrag zum tatsächlichen
 Rechnungsbetrag aus der Mail passt, ohne ein separates, fehleranfälliges
 Abgleich-Tool zu brauchen. Setup: [`connectors/gmail/README.md`](connectors/gmail/README.md).
 
-### Amazon — funktioniert, aber fragil (keine offizielle API)
-Amazon hat den früheren CSV-Export "Order History Reports" 2023 abgeschaltet;
-für Privatkonten existiert keine stabile Schnittstelle. Der Connector nutzt
-Playwright mit **deiner eigenen, manuell erstellten Login-Session** (Cookies —
-kein Passwort wird gespeichert oder automatisiert eingegeben). Setup:
-[`connectors/amazon/README.md`](connectors/amazon/README.md).
+### Amazon Business — offizielle API, kein Scraping
+Für **Amazon Business** (Firmenkonten) gibt es eine dokumentierte REST-API
+(Reconciliation API + Document API, authentifiziert über Login with Amazon /
+OAuth2) — genau wie bei Gmail also eine stabile, offizielle Schnittstelle statt
+Browser-Automatisierung. Erfordert eine einmalige Registrierung als
+Amazon-Business-API-Entwickler (Identitätsprüfung durch Amazon, dauert ggf.
+einige Tage). Setup: [`connectors/amazon-business/README.md`](connectors/amazon-business/README.md).
+**Best-effort-Hinweis:** Die exakten API-Endpunkt-Pfade in
+`amazon_business_connector.py` (mit `# ADJUST` markiert) konnten mangels
+Netzwerkzugriff auf `developer-docs.amazon.com` beim Bau dieses Repos nicht
+live verifiziert werden — vor dem ersten produktiven Lauf gegen die Doku
+prüfen, sobald ihr als Entwickler Zugriff darauf habt.
+
+### Amazon (privat) — Fallback, standardmässig deaktiviert
+Für private (Nicht-Business-)Amazon-Konten ohne API-Zugriff: Playwright mit
+**deiner eigenen, manuell erstellten Login-Session** (Cookies — kein Passwort
+wird gespeichert oder automatisiert eingegeben). Fragiler als die
+Business-API (Layout-Änderungen, ablaufende Sessions), deshalb nur als
+Fallback gedacht und über das Docker-Compose-Profil `legacy-private-amazon`
+standardmässig aus. Aktivieren mit
+`docker compose --profile legacy-private-amazon up -d connector-amazon`.
+Setup: [`connectors/amazon/README.md`](connectors/amazon/README.md).
 
 ### AliExpress — über Gmail abgedeckt
 Kein eigener Browser-Connector (zu instabil, siehe unten), stattdessen eine
@@ -154,8 +173,10 @@ aktuellen Tag auf https://github.com/docspell/docspell/releases prüfen.
 - **Alles lokal**: Belege, Datenbank, OCR-Index, Sessions liegen ausschliesslich
   unter `./data` auf deinem Server/NAS. Keine Cloud-OCR, kein Upload an
   Dritt-Dienste.
-- **Minimalprinzip bei Zugriffsrechten**: Gmail-Scope ist rein lesend; Amazon-
-  Session ist deine eigene, keine gespeicherten Passwörter.
+- **Minimalprinzip bei Zugriffsrechten**: Gmail-Scope ist rein lesend; die
+  Amazon-Business-API läuft über euren eigenen OAuth2-Consent, der
+  Fallback-Connector für private Konten speichert nur Session-Cookies, nie ein
+  Passwort.
 - **Verschlüsselung**: Für Belege mit personenbezogenen/sensiblen Daten
   empfiehlt sich zusätzlich Festplattenverschlüsselung des Host-Systems
   (LUKS/BitLocker/FileVault) — das deckt dieses Setup nicht selbst ab.
@@ -173,12 +194,15 @@ aktuellen Tag auf https://github.com/docspell/docspell/releases prüfen.
 ```bash
 git clone <dieses Repo>
 cd Belegwirtschaft
-./scripts/setup.sh                     # legt ./data (inkl. Dropzone) und .env an
+./scripts/setup.sh                        # legt ./data (inkl. Dropzone) und .env an
 # Danach je einmal lokal (nicht im Container):
-#   connectors/gmail/README.md     folgen (OAuth-Login)
-#   connectors/amazon/README.md    folgen (Session-Login)
-#   connectors/dropzone/README.md  folgen (Syncthing einrichten, optional)
+#   connectors/gmail/README.md            folgen (OAuth-Login)
+#   connectors/amazon-business/README.md  folgen (Amazon-Entwickler-Registrierung + OAuth-Login)
+#   connectors/dropzone/README.md         folgen (Syncthing einrichten, optional)
 docker compose up -d
+# Für ein privates (Nicht-Business-)Amazon-Konto zusätzlich/stattdessen:
+#   connectors/amazon/README.md folgen, dann:
+#   docker compose --profile legacy-private-amazon up -d connector-amazon
 open http://localhost:7880             # ersten Docspell-Account anlegen
 ```
 
@@ -201,7 +225,8 @@ connectors/
   common/                   # Docspell-Clients (Upload + authentifizierte Suche),
                              # Dedupe-/Fehler-State, ntfy-Alarme, Betrag-Extraktion
   gmail/                    # Gmail-Connector (OAuth2, gmail.readonly)
-  amazon/                   # Amazon-Connector (Playwright, eigene Session)
+  amazon-business/          # Amazon-Business-Connector (offizielle API, LWA-OAuth2)
+  amazon/                   # Fallback für private Konten (Playwright, standardmässig aus)
   dropzone/                 # Manuelles Scannen per Handy (Syncthing-Ordner)
 scripts/
   setup.sh                  # Einmaliges Setup (Verzeichnisse, .env)
@@ -215,6 +240,9 @@ data/                       # ALLE persistenten Daten (git-ignoriert)
 - Die authentifizierte Docspell-Such-API (`docspell_query.py`) einmal gegen
   eure laufende Instanz testen, bevor der Steuerberater-Export in einen festen
   Ablauf übernommen wird.
-- Amazon-CSS-Selektoren (`connectors/amazon/amazon_connector.py`, oberer
-  Abschnitt) ggf. anpassen, falls beim ersten Lauf keine Bestellungen
-  gefunden werden.
+- Amazon-Business-API-Endpunkte (`connectors/amazon-business/amazon_business_connector.py`,
+  alle mit `# ADJUST` markierten Stellen) gegen die echte Doku prüfen, sobald
+  ihr als Entwickler Zugriff habt — siehe `connectors/amazon-business/README.md`.
+- Nur falls der private Amazon-Fallback genutzt wird: CSS-Selektoren
+  (`connectors/amazon/amazon_connector.py`, oberer Abschnitt) ggf. anpassen,
+  falls beim ersten Lauf keine Bestellungen gefunden werden.

@@ -6,6 +6,11 @@
 
 rules:
   - name: amazon
+    # Bei Amazon Business übernimmt eigentlich der connector-amazon-business
+    # (offizielle API) die Rechnungen — diese Regel bleibt als redundanter
+    # Backup-Weg aktiv (falls z.B. mal ein Bestelltyp nicht über die API läuft).
+    # Doppelt hochgeladene, identische PDFs dedupliziert Docspell serverseitig
+    # per Datei-Hash automatisch, das schadet also nicht.
     query: 'from:(amazon.de OR amazon.com OR versandbestaetigung@amazon.de OR rechnung@amazon.de) (Rechnung OR invoice OR Bestellung OR order)'
     correspondent: "Amazon"
     tags: ["Rechnung", "Online-Shopping"]

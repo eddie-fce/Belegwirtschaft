@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 mkdir -p data/db data/solr data/docspell-files data/state data/dropzone
-mkdir -p connectors/gmail/secrets connectors/amazon/secrets
+mkdir -p connectors/gmail/secrets connectors/amazon/secrets connectors/amazon-business/secrets
 
 if [ ! -f .env ]; then
   cp .env.example .env

@@ -103,7 +103,42 @@ services:
       - internal
       - internet
 
+  # Amazon Business: offizielle API (Reconciliation + Document API, LWA-OAuth2)
+  # statt Browser-Scraping — siehe connectors/amazon-business/README.md für die
+  # nötige Entwickler-Registrierung bei Amazon.
+  connector-amazon-business:
+    build:
+      context: .
+      dockerfile: connectors/amazon-business/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - docspell-restserver
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
+      DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
+      AMAZON_BUSINESS_CLIENT_ID: ${AMAZON_BUSINESS_CLIENT_ID}
+      AMAZON_BUSINESS_CLIENT_SECRET: ${AMAZON_BUSINESS_CLIENT_SECRET}
+      AMAZON_BUSINESS_API_BASE_URL: ${AMAZON_BUSINESS_API_BASE_URL}
+      AMAZON_BUSINESS_LOOKBACK_DAYS: ${AMAZON_BUSINESS_LOOKBACK_DAYS}
+      AMAZON_BUSINESS_POLL_INTERVAL_SECONDS: ${AMAZON_BUSINESS_POLL_INTERVAL_SECONDS}
+      AMAZON_BUSINESS_ALERT_AFTER_FAILURES: ${AMAZON_BUSINESS_ALERT_AFTER_FAILURES}
+      NTFY_URL: ${NTFY_URL}
+      NTFY_TOPIC: ${NTFY_TOPIC}
+    volumes:
+      - ./connectors/amazon-business/secrets:/secrets
+      - ./data/state:/state
+    networks:
+      - internal
+      - internet
+
+  # Fallback für PRIVATE (Nicht-Business-)Amazon-Konten: Browser-Automatisierung
+  # statt offizieller API, entsprechend fragiler (siehe connectors/amazon/README.md).
+  # Standardmässig AUS, da für Amazon Business der Connector oben zuständig ist.
+  # Zum Aktivieren: Zeile mit "profiles:" entfernen und `docker compose up -d
+  # connector-amazon` explizit starten.
   connector-amazon:
+    profiles: ["legacy-private-amazon"]
     build:
       context: .
       dockerfile: connectors/amazon/Dockerfile
