@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-mkdir -p data/db data/solr data/docspell-files data/state data/dropzone
+mkdir -p data/db data/solr data/docspell-files data/state data/dropzone data/syncthing
 mkdir -p connectors/gmail/secrets
 
 if [ ! -f .env ]; then
@@ -25,4 +25,5 @@ echo "Fertig. Nächste Schritte:"
 echo "  1. connectors/gmail/README.md folgen (Gmail-Login einmalig lokal)"
 echo "  2. docker compose up -d"
 echo "  3. http://localhost:7880 öffnen und Docspell-Account anlegen"
-echo "  4. Amazon Business: 1-2x im Jahr docs/amazon-business-export.md folgen"
+echo "  4. connectors/dropzone/README.md folgen (Syncthing mit dem Handy koppeln)"
+echo "  5. Amazon Business: 1-2x im Jahr docs/amazon-business-export.md folgen"

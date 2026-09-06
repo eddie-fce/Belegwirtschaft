@@ -55,8 +55,9 @@ bewusst knappe `mem_limit`-Werte gesetzt:
 | docspell-restserver     | 384 MB | Web-UI/API, moderat |
 | docspell-joex           | 768 MB | OCR/Textanalyse — braucht am meisten Headroom |
 | connector-gmail/-dropzone | 128 MB je | Schlanke Python-Skripte |
+| syncthing               | 256 MB | Handy-Sync für den Dropzone-Ordner |
 
-Summe: ~2,1 GB — lässt der NAS noch etwas Luft für QTS selbst.
+Summe: ~2,35 GB — lässt der NAS noch etwas Luft für QTS selbst.
 
 **Das sind Startwerte, keine Garantie.** Beobachten mit:
 ```bash
@@ -94,7 +95,27 @@ selbst ist so eingestellt, dass es beim Systemstart automatisch startet
 
 ## 6. Dropzone/Syncthing auf der QNAP
 
-Syncthing ist im QNAP App Center verfügbar (oder als weiterer Container) —
-gleiche Einrichtung wie in [`connectors/dropzone/README.md`](../connectors/dropzone/README.md)
-beschrieben, nur dass der Zielordner direkt ein QNAP-Shared-Folder ist statt
-ein extra gemounteter.
+Syncthing läuft als Teil dieses Compose-Stacks (Service `syncthing`), keine
+zusätzliche App-Center-Installation nötig. Einrichtung (Geräte koppeln,
+Ordner freigeben, Scan-App konfigurieren):
+[`connectors/dropzone/README.md`](../connectors/dropzone/README.md).
+
+**Portweiterleitung am Router prüfen**, falls das Handy nicht nur im
+Heim-WLAN synchen soll: `22000/tcp+udp` auf die NAS-IP weiterleiten. Für die
+lokale Geräte-Erkennung im selben Netz reicht `21027/udp` ohne
+Portweiterleitung.
+
+## 7. Health-Checks und Startreihenfolge
+
+`docker-compose.yml` hat Healthchecks für `db` und `solr` sowie einen
+TCP-basierten für `docspell-restserver`; `docspell-joex` und die Connectors
+warten jeweils, bis ihre Abhängigkeiten als "healthy" gemeldet werden, bevor
+sie starten. Das verhindert das typische Race-Condition-Problem beim
+NAS-Neustart (Connector startet, bevor Docspell überhaupt bereit ist, und
+crash-loopt). Falls `docspell-restserver` dauerhaft "unhealthy" bleibt, obwohl
+es eigentlich läuft: `docker compose logs docspell-restserver` prüfen — der
+Healthcheck nutzt einen reinen Bash-TCP-Connect-Test, der ein installiertes
+Bash im Image voraussetzt (bei sbt-native-packager-Images normalerweise der
+Fall). Falls nicht vorhanden, den `healthcheck`-Block bei `docspell-restserver`
+entfernen und `depends_on: condition: service_healthy` bei den abhängigen
+Diensten auf `service_started` zurückstellen.

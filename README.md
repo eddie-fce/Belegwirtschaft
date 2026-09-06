@@ -112,10 +112,61 @@ Rechnung manuell als PDF speichern und über die **Dropzone** (s.u.) oder
 direkt in Docspells Web-UI hochladen.
 
 ### Dropzone — manuelles Scannen per Handy
-Ein Ordner (`./data/dropzone`, per Syncthing vom Handy synchronisiert)
-wird beobachtet; jede neue Datei (Foto von Restaurant-/Park-/Tankbeleg) wird
-automatisch mit Tag `Manuell` nach Docspell hochgeladen und danach in
-`verarbeitet/` verschoben. Setup: [`connectors/dropzone/README.md`](connectors/dropzone/README.md).
+Ein Ordner (`./data/dropzone`) wird beobachtet; jede neue Datei (Foto/Scan von
+Restaurant-/Park-/Tankbeleg) wird automatisch mit Tag `Manuell` nach Docspell
+hochgeladen und danach in `verarbeitet/` verschoben. Die Synchronisation
+zwischen Handy und diesem Ordner übernimmt **Syncthing**, das als eigener
+Service in `docker-compose.yml` mitläuft (keine externe Installation nötig).
+Setup: [`connectors/dropzone/README.md`](connectors/dropzone/README.md).
+
+## Nutzung im Alltag
+
+### Wie werden die Belege gespeichert — kann ich die Struktur selbst vorgeben?
+Wichtig zu verstehen: Die Dateien landen **nicht** in einem von dir lesbaren
+Ordnerbaum, sondern in Docspells eigenem Ablagesystem unter
+`./data/docspell-files` — dort intern nach Datei-Hash organisiert, nicht nach
+Namen/Kategorie durchsuchbar. Das ist normal für Dokumentenmanagement-Systeme:
+**Docspell selbst ist die Oberfläche**, über die du suchst und filterst, nicht
+das Dateisystem direkt.
+
+Die Struktur, die du tatsächlich vorgibst und änderst, sind Docspells eigene
+Metadaten:
+- **Tags** (z.B. "Rechnung", "Online-Shopping") — frei definierbar in
+  Docspells Web-UI unter Verwaltung → Tags.
+- **Correspondents** (Absender/Firma, z.B. "Amazon", "PayPal") — ebenfalls
+  dort verwaltet.
+- **Folders** — Docspells eigenes, virtuelles Ordner-Konzept (kein echtes
+  Verzeichnis auf der Platte), ebenfalls frei anlegbar.
+
+Für automatisch eingehende Gmail-Belege legst du die Zuordnung vorab in
+[`config/sources.yaml`](config/sources.yaml) fest (Regel → Correspondent/Tags/Folder).
+Für alles andere (Dropzone-Uploads, manuelle Uploads) landen die Belege erst
+mit den Tags `Manuell`/`Unsortiert` in Docspell und du sortierst sie in der
+Web-UI nach — dort auch per Mehrfachauswahl ("Multi-Edit") mehrere Belege auf
+einmal taggen. Wer eine echte, exportierbare Ordnerstruktur braucht (z.B. für
+den Steuerberater ausserhalb von Docspell): dafür ist der
+[Steuerberater-Export](#steuerberater-export) gedacht, der getaggte Belege
+als ZIP mit Manifest herausschreibt.
+
+### Scanner am Handy
+Siehe [Dropzone-Abschnitt](#dropzone--manuelles-scannen-per-handy) oben bzw.
+ausführlich [`connectors/dropzone/README.md`](connectors/dropzone/README.md):
+Syncthing (im Stack enthalten) mit dem Handy koppeln, eine Scan-App (z.B. die
+iOS-Notizen-App oder Genius Scan auf Android) auf den gekoppelten Ordner
+zeigen lassen — alles, was dort landet, wird automatisch hochgeladen.
+
+### Einzelne Dokumente hochladen
+Zwei Wege, je nach Situation:
+1. **Direkt in Docspells Web-UI** (`http://localhost:7880`, per SSH-Tunnel
+   erreichbar): Datei per Drag & Drop oder Dateiauswahl hochladen — dabei
+   kannst du sofort Tags/Correspondent/Datum setzen. Am praktischsten, wenn
+   du gerade am Rechner sitzt und das Dokument gleich richtig einsortieren
+   willst.
+2. **In den Dropzone-Ordner legen** (`./data/dropzone`, z.B. per
+   Netzwerkfreigabe oder direkt auf der NAS): landet automatisch mit
+   `Manuell`/`Unsortiert` in Docspell, zum späteren Nachsortieren. Praktisch,
+   wenn du gerade nicht am Rechner bist oder mehrere Dateien auf einmal
+   loswerden willst, ohne bei jeder einzelnen die Web-UI zu bedienen.
 
 ## Betrieb & Ausfallsicherheit
 
