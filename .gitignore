@@ -1,0 +1,18 @@
+.env
+
+# secrets / sessions — never commit these
+connectors/gmail/secrets/credentials.json
+connectors/gmail/secrets/token.json
+connectors/amazon/secrets/storage_state.json
+**/secrets/*
+!**/secrets/.gitkeep
+
+# runtime state & data (lives only on the host)
+data/
+state/
+*.db
+*.sqlite
+
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,48 @@
+# Regeln, nach denen der Gmail-Connector Belege erkennt und einsortiert.
+# Jede Regel: Gmail-Suchfilter (gleiche Syntax wie im Gmail-Suchfeld) + Metadaten,
+# mit denen der Treffer in Docspell abgelegt wird.
+#
+# Tipp: Regeln erst mit https://mail.google.com Suchfeld austesten, dann hier eintragen.
+
+rules:
+  - name: amazon
+    # Bei Amazon Business übernimmt eigentlich der connector-amazon-business
+    # (offizielle API) die Rechnungen — diese Regel bleibt als redundanter
+    # Backup-Weg aktiv (falls z.B. mal ein Bestelltyp nicht über die API läuft).
+    # Doppelt hochgeladene, identische PDFs dedupliziert Docspell serverseitig
+    # per Datei-Hash automatisch, das schadet also nicht.
+    query: 'from:(amazon.de OR amazon.com OR versandbestaetigung@amazon.de OR rechnung@amazon.de) (Rechnung OR invoice OR Bestellung OR order)'
+    correspondent: "Amazon"
+    tags: ["Rechnung", "Online-Shopping"]
+    folder: "Amazon"
+
+  - name: aliexpress
+    # AliExpress bietet keine Bestellhistorie-API; die meisten Bestellbestätigungen
+    # und Rechnungslinks kommen aber ohnehin per Mail an — die fängt diese Regel ab.
+    # Deckt nicht 100% ab (manche Verkäufer verschicken keine Rechnungsmail), aber
+    # ohne den Aufwand/die Fragilität eines eigenen Browser-Connectors wie bei Amazon.
+    query: 'from:(aliexpress.com) (Bestellung OR order OR Rechnung OR invoice OR shipped OR versandt)'
+    correspondent: "AliExpress"
+    tags: ["Rechnung", "Online-Shopping"]
+    folder: "AliExpress"
+
+  - name: paypal
+    query: 'from:(paypal.de OR paypal.com) (Zahlung OR Beleg OR receipt)'
+    correspondent: "PayPal"
+    tags: ["Rechnung", "Zahlungsbeleg"]
+    folder: "PayPal"
+
+  - name: generic-invoice
+    # Fängt alles ab, was nach Rechnung aussieht und noch nicht durch eine
+    # spezifischere Regel oben erfasst wurde (Connector prüft Regeln der Reihe nach).
+    query: 'has:attachment (Rechnung OR Invoice OR Beleg OR Quittung) filename:pdf'
+    correspondent: null
+    tags: ["Rechnung", "Unsortiert"]
+    folder: "Sonstige"
+
+# Anhänge, die ignoriert werden sollen (z.B. Signaturbilder, Logos)
+ignore_attachment_patterns:
+  - "*.png"
+  - "*.jpg"
+  - "*.gif"
+  - "logo*"
