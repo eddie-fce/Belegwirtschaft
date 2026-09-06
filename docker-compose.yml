@@ -14,11 +14,17 @@
 # im Jahr lohnt sich weder eine Amazon-Entwickler-Registrierung noch eine gegen
 # Amazons UI geschriebene Browser-Automatisierung. Stattdessen: manueller
 # Business-Analytics-Bulk-Export -> Dropzone, siehe docs/amazon-business-export.md.
+#
+# Speicherlimits (mem_limit) unten sind für kleine NAS-Systeme (z.B. QNAP mit
+# ~4 GB RAM neben dem laufenden QTS/QuTS) bewusst knapp bemessen — siehe
+# docs/deploy-qnap.md für Hintergrund und Anpassung. Auf einem Server mit viel
+# RAM können diese Zeilen einfach entfernt werden.
 
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 256m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -31,6 +37,12 @@ services:
   solr:
     image: solr:9
     restart: unless-stopped
+    mem_limit: 512m
+    # SOLR_HEAP begrenzt den JVM-Heap explizit (sonst nimmt sich Solr per Default
+    # einen Anteil des System-RAM statt des Container-Limits) — wichtig auf
+    # kleinen NAS-Systemen. Bei mehr verfügbarem RAM einfach erhöhen.
+    environment:
+      SOLR_HEAP: 384m
     command: ["solr-precreate", "docspell"]
     volumes:
       - ./data/solr:/var/solr
@@ -45,6 +57,7 @@ services:
     # aktuell gewünschte Version prüfen und in .env eintragen.
     image: docspell/restserver:${DOCSPELL_VERSION}
     restart: unless-stopped
+    mem_limit: 384m
     depends_on:
       - db
       - solr
@@ -70,6 +83,10 @@ services:
   docspell-joex:
     image: docspell/joex:${DOCSPELL_VERSION}
     restart: unless-stopped
+    # OCR/Textanalyse braucht mehr Headroom als restserver — bei häufigen
+    # Out-of-Memory-Abbrüchen (siehe docs/deploy-qnap.md) hier zuerst erhöhen,
+    # notfalls auf Kosten von solr/db.
+    mem_limit: 768m
     depends_on:
       - db
       - solr
@@ -89,6 +106,7 @@ services:
       context: .
       dockerfile: connectors/gmail/Dockerfile
     restart: unless-stopped
+    mem_limit: 128m
     depends_on:
       - docspell-restserver
     environment:
@@ -113,6 +131,7 @@ services:
       context: .
       dockerfile: connectors/dropzone/Dockerfile
     restart: unless-stopped
+    mem_limit: 128m
     depends_on:
       - docspell-restserver
     environment:

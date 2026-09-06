@@ -7,6 +7,11 @@ archiviert. Alles läuft auf eigener Hardware — keine Cloud, keine
 Dritt-Dienste ausser der Quelle selbst (Gmail-API, optional ein selbst
 gehosteter ntfy-Server für Alarme).
 
+Läuft bei uns auf einer QNAP TS-435A (ARM, ~4 GB RAM) — siehe
+[`docs/deploy-qnap.md`](docs/deploy-qnap.md) für QNAP-spezifisches Setup und
+RAM-Tuning. Auf einem grosszügigeren Server/NAS reicht das normale Setup
+weiter unten ohne Anpassungen.
+
 ## Architektur
 
 ```
