@@ -33,7 +33,12 @@ services:
       - internal
 
   docspell-restserver:
-    image: docspell/restserver:latest
+    # Versionsgepinnt statt ":latest" (Reproduzierbarkeit — ein Update im
+    # Hintergrund soll den Stack nicht überraschend brechen). Der Tag hier ist ein
+    # Platzhalter aus Trainingswissen (docspell.org war beim Erstellen dieses Setups
+    # nicht erreichbar) — bitte auf https://github.com/docspell/docspell/releases die
+    # aktuell gewünschte Version prüfen und in .env eintragen.
+    image: docspell/restserver:${DOCSPELL_VERSION}
     restart: unless-stopped
     depends_on:
       - db
@@ -58,7 +63,7 @@ services:
       - internal
 
   docspell-joex:
-    image: docspell/joex:latest
+    image: docspell/joex:${DOCSPELL_VERSION}
     restart: unless-stopped
     depends_on:
       - db
@@ -87,6 +92,9 @@ services:
       DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
       GMAIL_POLL_INTERVAL_SECONDS: ${GMAIL_POLL_INTERVAL_SECONDS}
       GMAIL_LABEL: ${GMAIL_LABEL}
+      GMAIL_ALERT_AFTER_FAILURES: ${GMAIL_ALERT_AFTER_FAILURES}
+      NTFY_URL: ${NTFY_URL}
+      NTFY_TOPIC: ${NTFY_TOPIC}
     volumes:
       - ./connectors/gmail/secrets:/secrets
       - ./config/sources.yaml:/config/sources.yaml:ro
@@ -109,11 +117,39 @@ services:
       AMAZON_DOMAIN: ${AMAZON_DOMAIN}
       AMAZON_POLL_INTERVAL_SECONDS: ${AMAZON_POLL_INTERVAL_SECONDS}
       AMAZON_ORDER_LOOKBACK_DAYS: ${AMAZON_ORDER_LOOKBACK_DAYS}
+      AMAZON_ALERT_AFTER_FAILURES: ${AMAZON_ALERT_AFTER_FAILURES}
+      AMAZON_ALERT_AFTER_EMPTY_RUNS: ${AMAZON_ALERT_AFTER_EMPTY_RUNS}
+      NTFY_URL: ${NTFY_URL}
+      NTFY_TOPIC: ${NTFY_TOPIC}
     volumes:
       - ./connectors/amazon/secrets:/secrets
       - ./data/state:/state
     networks:
       - internal
+      - internet
+
+  connector-dropzone:
+    build:
+      context: .
+      dockerfile: connectors/dropzone/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - docspell-restserver
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
+      DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
+      DROPZONE_POLL_INTERVAL_SECONDS: ${DROPZONE_POLL_INTERVAL_SECONDS}
+      DROPZONE_ALERT_AFTER_FAILURES: ${DROPZONE_ALERT_AFTER_FAILURES}
+      NTFY_URL: ${NTFY_URL}
+      NTFY_TOPIC: ${NTFY_TOPIC}
+    volumes:
+      - ${DROPZONE_HOST_PATH}:/dropzone
+      - ./data/state:/state
+    networks:
+      - internal
+      # Nur für optionale ntfy-Alarme nötig — die eigentliche Dropzone-Funktion
+      # (Ordner beobachten, zu Docspell hochladen) braucht kein Internet.
       - internet
 
 networks:

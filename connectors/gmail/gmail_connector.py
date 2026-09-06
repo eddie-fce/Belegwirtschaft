@@ -31,7 +31,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "common"))
+from common.amount_extract import extract_amount  # noqa: E402
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
+from common.notify import notify  # noqa: E402
 from common.state import ProcessedStore  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -120,6 +122,26 @@ def _walk_parts(payload: dict) -> list[dict]:
     return out
 
 
+def fetch_email_text(service, msg_id: str) -> str:
+    """Holt den Klartext-Body einer Mail (für die Betrag-Extraktion). Best-effort:
+    bevorzugt text/plain, sonst text/html roh (Regex verträgt die paar HTML-Tags
+    im Umfeld einer Zahl meist problemlos)."""
+    msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+    parts = _walk_parts(msg.get("payload", {}))
+    plain, html = "", ""
+    for part in parts:
+        mime = part.get("mimeType", "")
+        data = part.get("body", {}).get("data")
+        if not data:
+            continue
+        text = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+        if mime == "text/plain":
+            plain += text
+        elif mime == "text/html":
+            html += text
+    return plain or html
+
+
 def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
     rules, ignore_patterns = load_rules()
     label = os.environ.get("GMAIL_LABEL", "INBOX")
@@ -142,6 +164,18 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
                 store.mark_processed("gmail", msg_id)
                 continue
 
+            # Betrag aus dem Mailtext extrahieren (best effort) — als Plausibilitäts-
+            # Referenz für den später von Docspells OCR erkannten Betrag. Landet
+            # sichtbar im Dateinamen und wird zusätzlich im lokalen State gespeichert.
+            expected_amount, expected_currency = None, None
+            try:
+                email_text = fetch_email_text(service, msg_id)
+                result = extract_amount(email_text)
+                if result:
+                    expected_amount, expected_currency = result
+            except Exception:
+                log.debug("Konnte Betrag aus Mailtext nicht extrahieren (Mail %s)", msg_id)
+
             meta = DocspellMeta(
                 correspondent=rule.get("correspondent"),
                 tags=rule.get("tags", []),
@@ -149,11 +183,18 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
             )
             ok_count = 0
             for filename, content in attachments:
-                if client.upload(filename, content, meta):
+                upload_name = filename
+                if expected_amount:
+                    stem, dot, ext = filename.rpartition(".")
+                    suffix = f"_{expected_amount}{expected_currency}"
+                    upload_name = f"{stem}{suffix}.{ext}" if dot else f"{filename}{suffix}"
+                if client.upload(upload_name, content, meta):
                     ok_count += 1
 
             if ok_count == len(attachments):
-                store.mark_processed("gmail", msg_id)
+                store.mark_processed(
+                    "gmail", msg_id, expected_amount=expected_amount, expected_currency=expected_currency
+                )
             else:
                 log.warning(
                     "Nicht alle Anhänge von Mail %s hochgeladen (%d/%d) — beim "
@@ -176,11 +217,21 @@ def main() -> None:
     client = DocspellClient()
 
     interval = int(os.environ.get("GMAIL_POLL_INTERVAL_SECONDS", "900"))
+    alert_threshold = int(os.environ.get("GMAIL_ALERT_AFTER_FAILURES", "3"))
     while True:
         try:
             run_once(service, store, client)
-        except Exception:
+            store.record_success("gmail")
+        except Exception as exc:
             log.exception("Fehler im Gmail-Connector-Durchlauf")
+            failures = store.record_failure("gmail")
+            if store.should_alert("gmail", alert_threshold):
+                notify(
+                    "Belegwirtschaft: Gmail-Connector gestört",
+                    f"{failures} Durchläufe in Folge fehlgeschlagen. Letzter Fehler: {exc}\n"
+                    "Bitte Logs prüfen: docker compose logs connector-gmail",
+                    priority="high",
+                )
         time.sleep(interval)
 
 

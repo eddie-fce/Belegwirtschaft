@@ -11,6 +11,16 @@ rules:
     tags: ["Rechnung", "Online-Shopping"]
     folder: "Amazon"
 
+  - name: aliexpress
+    # AliExpress bietet keine Bestellhistorie-API; die meisten Bestellbestätigungen
+    # und Rechnungslinks kommen aber ohnehin per Mail an — die fängt diese Regel ab.
+    # Deckt nicht 100% ab (manche Verkäufer verschicken keine Rechnungsmail), aber
+    # ohne den Aufwand/die Fragilität eines eigenen Browser-Connectors wie bei Amazon.
+    query: 'from:(aliexpress.com) (Bestellung OR order OR Rechnung OR invoice OR shipped OR versandt)'
+    correspondent: "AliExpress"
+    tags: ["Rechnung", "Online-Shopping"]
+    folder: "AliExpress"
+
   - name: paypal
     query: 'from:(paypal.de OR paypal.com) (Zahlung OR Beleg OR receipt)'
     correspondent: "PayPal"

@@ -32,6 +32,7 @@ from playwright.sync_api import Page, sync_playwright
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "common"))
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
+from common.notify import notify  # noqa: E402
 from common.state import ProcessedStore  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -159,6 +160,22 @@ def run_once(store: ProcessedStore, client: DocspellClient) -> None:
 
         order_ids = _extract_order_ids(page)
         log.info("%d Bestellungen auf der aktuellen Seite gefunden", len(order_ids))
+        if not order_ids:
+            # Kein harter Fehler (evtl. wirklich keine neuen Bestellungen), aber
+            # verdächtig genug, um bei Wiederholung zu alarmieren — typischerweise
+            # ein Zeichen für ein geändertes Amazon-Layout (CSS-Selektoren oben
+            # in dieser Datei prüfen).
+            streak = store.record_failure("amazon_empty")
+            if store.should_alert("amazon_empty", int(os.environ.get("AMAZON_ALERT_AFTER_EMPTY_RUNS", "3"))):
+                notify(
+                    "Belegwirtschaft: Amazon-Connector findet keine Bestellungen mehr",
+                    f"{streak} Durchläufe in Folge ohne gefundene Bestellungen. "
+                    "Vermutlich hat Amazon das Seitenlayout geändert — CSS-Selektoren "
+                    "in amazon_connector.py prüfen, oder Session mit --login erneuern.",
+                    priority="high",
+                )
+        else:
+            store.record_success("amazon_empty")
 
         for order_id in order_ids:
             if store.is_processed("amazon", order_id):
@@ -192,11 +209,22 @@ def main() -> None:
     client = DocspellClient()
     interval = int(os.environ.get("AMAZON_POLL_INTERVAL_SECONDS", "21600"))
 
+    alert_threshold = int(os.environ.get("AMAZON_ALERT_AFTER_FAILURES", "3"))
     while True:
         try:
             run_once(store, client)
-        except Exception:
+            store.record_success("amazon")
+        except Exception as exc:
             log.exception("Fehler im Amazon-Connector-Durchlauf")
+            failures = store.record_failure("amazon")
+            if store.should_alert("amazon", alert_threshold):
+                notify(
+                    "Belegwirtschaft: Amazon-Connector gestört",
+                    f"{failures} Durchläufe in Folge fehlgeschlagen. Letzter Fehler: {exc}\n"
+                    "Meist bedeutet das: Session abgelaufen → 'python amazon_connector.py "
+                    "--login' erneut ausführen.",
+                    priority="high",
+                )
         time.sleep(interval)
 
 
