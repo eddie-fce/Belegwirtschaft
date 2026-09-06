@@ -2,8 +2,8 @@
 
 Für Belege, die nie digital ankommen: Restaurant-Quittung, Parkschein,
 Tankbeleg — mit dem Handy fotografieren, landet automatisch in Docspell.
-Genauso der Weg für den **Amazon-Business-Bulk-Export**: das monatliche
-ZIP mit Rechnungen (siehe [`connectors/amazon-business/README.md`](../amazon-business/README.md))
+Genauso der Weg für den **Amazon-Business-Bulk-Export**: das 1-2x im Jahr
+heruntergeladene ZIP mit Rechnungen (siehe [`docs/amazon-business-export.md`](../../docs/amazon-business-export.md))
 einfach hier entpacken statt fotografieren — der Connector unterscheidet
 nicht zwischen den Quellen, er lädt einfach jede neue Datei hoch.
 

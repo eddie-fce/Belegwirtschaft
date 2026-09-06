@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 mkdir -p data/db data/solr data/docspell-files data/state data/dropzone
-mkdir -p connectors/gmail/secrets connectors/amazon/secrets connectors/amazon-business/secrets
+mkdir -p connectors/gmail/secrets
 
 if [ ! -f .env ]; then
   cp .env.example .env
@@ -23,6 +23,6 @@ fi
 echo ""
 echo "Fertig. Nächste Schritte:"
 echo "  1. connectors/gmail/README.md folgen (Gmail-Login einmalig lokal)"
-echo "  2. connectors/amazon/README.md folgen (Amazon-Login einmalig lokal)"
-echo "  3. docker compose up -d"
-echo "  4. http://localhost:7880 öffnen und Docspell-Account anlegen"
+echo "  2. docker compose up -d"
+echo "  3. http://localhost:7880 öffnen und Docspell-Account anlegen"
+echo "  4. Amazon Business: 1-2x im Jahr docs/amazon-business-export.md folgen"

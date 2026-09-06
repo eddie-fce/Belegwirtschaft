@@ -7,16 +7,13 @@
 # Env-Var-Namen). Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
 #
 # Alle Daten (Belege, Datenbank, Sessions) landen ausschliesslich in ./data auf diesem Host.
-# Es gibt keine Verbindung nach aussen ausser: Gmail-API (Google) und, falls per Profil
-# aktiviert, Amazon — beides nur von den jeweiligen Connector-Containern aus, niemals vom
-# Docspell-Kern selbst.
+# Es gibt keine Verbindung nach aussen ausser der Gmail-API (Google) — nur vom
+# Gmail-Connector-Container aus, niemals vom Docspell-Kern selbst.
 #
-# Standardmässig (`docker compose up -d`) laufen nur Docspell + Gmail-Connector +
-# Dropzone-Connector. Amazon-Belege kommen ohne Amazon-Entwicklerzugang manuell über
-# Business Analytics -> Dropzone rein (siehe connectors/amazon-business/README.md).
-# Die beiden Amazon-Connector-Container sind hinter Docker-Compose-Profilen versteckt
-# und nur für später gedacht, falls ihr doch Entwicklerzugang bekommt bzw. ein privates
-# Amazon-Konto anbinden wollt.
+# Amazon Business hat bewusst KEINEN eigenen Connector: bei 1-2 Rechnungs-Exporten
+# im Jahr lohnt sich weder eine Amazon-Entwickler-Registrierung noch eine gegen
+# Amazons UI geschriebene Browser-Automatisierung. Stattdessen: manueller
+# Business-Analytics-Bulk-Export -> Dropzone, siehe docs/amazon-business-export.md.
 
 services:
   db:
@@ -111,71 +108,6 @@ services:
       - internal
       - internet
 
-  # Amazon Business über die offizielle API (Reconciliation + Document API,
-  # LWA-OAuth2) — braucht eine Registrierung als Amazon-Business-API-Entwickler
-  # (Identitätsprüfung durch Amazon). Ohne diese Registrierung nicht nutzbar,
-  # deshalb standardmässig AUS. Für den Alltag ohne Entwicklerzugang: manueller
-  # Bulk-Export über "Business Analytics" + Dropzone-Connector, siehe
-  # connectors/amazon-business/README.md (Abschnitt "Ohne Entwickler-Zugang").
-  # Aktivieren: `docker compose --profile amazon-business-api up -d connector-amazon-business`
-  connector-amazon-business:
-    profiles: ["amazon-business-api"]
-    build:
-      context: .
-      dockerfile: connectors/amazon-business/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - docspell-restserver
-    environment:
-      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
-      DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
-      DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
-      AMAZON_BUSINESS_CLIENT_ID: ${AMAZON_BUSINESS_CLIENT_ID}
-      AMAZON_BUSINESS_CLIENT_SECRET: ${AMAZON_BUSINESS_CLIENT_SECRET}
-      AMAZON_BUSINESS_API_BASE_URL: ${AMAZON_BUSINESS_API_BASE_URL}
-      AMAZON_BUSINESS_LOOKBACK_DAYS: ${AMAZON_BUSINESS_LOOKBACK_DAYS}
-      AMAZON_BUSINESS_POLL_INTERVAL_SECONDS: ${AMAZON_BUSINESS_POLL_INTERVAL_SECONDS}
-      AMAZON_BUSINESS_ALERT_AFTER_FAILURES: ${AMAZON_BUSINESS_ALERT_AFTER_FAILURES}
-      NTFY_URL: ${NTFY_URL}
-      NTFY_TOPIC: ${NTFY_TOPIC}
-    volumes:
-      - ./connectors/amazon-business/secrets:/secrets
-      - ./data/state:/state
-    networks:
-      - internal
-      - internet
-
-  # Fallback für PRIVATE (Nicht-Business-)Amazon-Konten: Browser-Automatisierung
-  # statt offizieller API, entsprechend fragiler (siehe connectors/amazon/README.md).
-  # Standardmässig AUS, da für Amazon Business der Connector oben zuständig ist.
-  # Zum Aktivieren: Zeile mit "profiles:" entfernen und `docker compose up -d
-  # connector-amazon` explizit starten.
-  connector-amazon:
-    profiles: ["legacy-private-amazon"]
-    build:
-      context: .
-      dockerfile: connectors/amazon/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - docspell-restserver
-    environment:
-      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
-      DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
-      DOCSPELL_INTEGRATION_SECRET: ${DOCSPELL_INTEGRATION_SECRET}
-      AMAZON_DOMAIN: ${AMAZON_DOMAIN}
-      AMAZON_POLL_INTERVAL_SECONDS: ${AMAZON_POLL_INTERVAL_SECONDS}
-      AMAZON_ORDER_LOOKBACK_DAYS: ${AMAZON_ORDER_LOOKBACK_DAYS}
-      AMAZON_ALERT_AFTER_FAILURES: ${AMAZON_ALERT_AFTER_FAILURES}
-      AMAZON_ALERT_AFTER_EMPTY_RUNS: ${AMAZON_ALERT_AFTER_EMPTY_RUNS}
-      NTFY_URL: ${NTFY_URL}
-      NTFY_TOPIC: ${NTFY_TOPIC}
-    volumes:
-      - ./connectors/amazon/secrets:/secrets
-      - ./data/state:/state
-    networks:
-      - internal
-      - internet
-
   connector-dropzone:
     build:
       context: .
@@ -204,6 +136,6 @@ networks:
   # Docspell-Kern + DB + Solr reden nur miteinander, kein Internetzugriff nötig/erlaubt.
   internal:
     internal: true
-  # Nur die Connectors hängen zusätzlich hier dran, um Gmail/Amazon zu erreichen.
+  # Nur die Connectors hängen zusätzlich hier dran (Gmail-API, optional ntfy).
   internet:
     driver: bridge

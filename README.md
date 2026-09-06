@@ -1,11 +1,11 @@
 # Belegwirtschaft
 
 Lokal gehostetes Belegmanagement für die Firma: Belege aus Gmail werden
-automatisch eingesammelt, Amazon-Business-Rechnungen per monatlichem
-Bulk-Export + Dropzone, dazu manuelles Scannen per Handy — alles per OCR
-durchsuchbar gemacht und archiviert. Alles läuft auf eigener Hardware — keine
-Cloud, keine Dritt-Dienste ausser den Quellen selbst (Gmail-API, optional ein
-selbst gehosteter ntfy-Server für Alarme).
+automatisch eingesammelt, dazu manuelles Scannen per Handy und (1-2x im Jahr)
+ein Amazon-Business-Bulk-Export — alles per OCR durchsuchbar gemacht und
+archiviert. Alles läuft auf eigener Hardware — keine Cloud, keine
+Dritt-Dienste ausser der Quelle selbst (Gmail-API, optional ein selbst
+gehosteter ntfy-Server für Alarme).
 
 ## Architektur
 
@@ -14,12 +14,11 @@ selbst gehosteter ntfy-Server für Alarme).
                     │                  Docker-Host                    │
                     │                                                 │
   Gmail (API)───────┼──▶ connector-gmail             ──┐             │
-                    │                                   │             │
-  Business Analytics┼──▶ (manueller ZIP-Export,       ──┤             │
-   (monatlich, paar   │    entpacken in ./data/dropzone) │             │
-    Klicks)            │                                   ├──▶ Docspell │
-                    │                                   │  Integration│
-  Handy (Syncthing)──┼──▶ connector-dropzone           ──┘  Endpoint   │
+                    │                                   ├──▶ Docspell │
+  Handy (Syncthing)──┼──▶ connector-dropzone           ──┘  Integration│
+  Amazon-Export       │        ▲                             Endpoint  │
+   (1-2x/Jahr,         │        │                                      │
+    manuelles ZIP)      │  entpacken in ./data/dropzone                │
                     │                                   │             │
                     │                                   ▼             │
                     │                            docspell-restserver   │
@@ -38,14 +37,13 @@ selbst gehosteter ntfy-Server für Alarme).
                                                         bei gestörten Connectors
 ```
 
-Amazon läuft standardmässig **ohne eigenen Connector-Container**: Ohne
-Amazon-Entwicklerzugang gibt es keine stabile Automatisierung, die ich blind
-gegen Amazons UI hätte bauen können, ohne sie live zu testen — stattdessen ein
-eingebauter Amazon-Business-Bulk-Export (ein paar Klicks im Monat) direkt in
-den ohnehin vorhandenen Dropzone-Ordner. Zwei optionale Connector-Container
-liegen für später bereit (Docker-Compose-Profile, siehe unten): die
-offizielle Amazon-Business-API (falls ihr doch Entwicklerzugang bekommt) und
-ein Playwright-Fallback für private Amazon-Konten.
+Nur zwei Connector-Container: **Gmail** (echte Automatisierung, läuft dauerhaft)
+und **Dropzone** (nimmt sowohl Handy-Scans als auch den seltenen
+Amazon-Business-Export entgegen). Für Amazon gibt es bewusst **keinen eigenen
+Connector-Code**: Bei 1-2 Exporten im Jahr wäre sowohl eine
+Amazon-Entwickler-Registrierung als auch eine gegen Amazons UI geschriebene
+Browser-Automatisierung mehr Aufwand/Fragilität, als sie einsparen — Details
+dazu in [`docs/amazon-business-export.md`](docs/amazon-business-export.md).
 
 **Kernstück ist [Docspell](https://docspell.org)**, kein Eigenbau: OCR,
 Volltextsuche, Tags/Correspondents/Ordner, Web-UI, ein lernender Klassifikator
@@ -56,7 +54,7 @@ anliefern, plus ein paar Betriebs-Skripte drumherum (Backup, Export, Alarme).
 Netzwerk-Design: Docspell-Kern + Datenbank + Solr haben **kein Internet**
 (Docker-Netz `internal`, `internal: true`). Nur die Connector-Container hängen
 zusätzlich am Netz `internet` und dürfen nach aussen — und auch die nur zu
-Google (Gmail-API), amazon.de bzw. dem optionalen ntfy-Server.
+Google (Gmail-API) bzw. dem optionalen ntfy-Server.
 
 ## Warum Docspell (und nicht Paperless-ngx oder ein Eigenbau)
 
@@ -91,35 +89,14 @@ Docspell auf einen Blick, ob der von OCR erkannte Betrag zum tatsächlichen
 Rechnungsbetrag aus der Mail passt, ohne ein separates, fehleranfälliges
 Abgleich-Tool zu brauchen. Setup: [`connectors/gmail/README.md`](connectors/gmail/README.md).
 
-### Amazon Business — manueller Bulk-Export + Dropzone (Standard, kein Entwicklerkonto nötig)
-Amazon Business hat einen eingebauten Sammel-Export: "Business Analytics" →
-Berichte → Bestellungen → Zeitraum wählen → Rechnungen als ZIP herunterladen
-(bis zu 2000 Dokumente pro Durchgang, bis zu 5 Jahre rückwirkend). ZIP
-entpacken, PDFs in `./data/dropzone` legen — der **Dropzone-Connector** (s.u.)
-lädt sie automatisch nach Docspell hoch. Praktisch als monatliche 5-Minuten-
-Aufgabe, ganz ohne API-Registrierung oder fragile Browser-Automatisierung.
-Details: [`connectors/amazon-business/README.md`](connectors/amazon-business/README.md).
-
-### Amazon Business — offizielle API (optional, braucht Entwicklerzugang)
-Für später, falls ihr doch als Amazon-Business-API-Entwickler registriert
-seid (Identitätsprüfung durch Amazon, kann mehrere Tage dauern): ein fertiger
-Connector nutzt die Reconciliation API + Document API über Login-with-Amazon-
-OAuth2 komplett automatisiert. Standardmässig aus (Docker-Compose-Profil
-`amazon-business-api`), da ohne Registrierung nicht nutzbar. **Best-effort-
-Hinweis:** Die exakten API-Endpunkt-Pfade in `amazon_business_connector.py`
-(mit `# ADJUST` markiert) konnten mangels Netzwerkzugriff auf
-`developer-docs.amazon.com` beim Bau dieses Repos nicht live verifiziert
-werden. Details: [`connectors/amazon-business/README.md`](connectors/amazon-business/README.md).
-
-### Amazon (privat) — Fallback, standardmässig deaktiviert
-Für private (Nicht-Business-)Amazon-Konten: Playwright mit **deiner eigenen,
-manuell erstellten Login-Session** (Cookies — kein Passwort wird gespeichert
-oder automatisiert eingegeben). Fragiler als die beiden Wege oben
-(Layout-Änderungen, ablaufende Sessions), deshalb nur als Fallback gedacht
-und über das Docker-Compose-Profil `legacy-private-amazon` standardmässig
-aus. Aktivieren mit
-`docker compose --profile legacy-private-amazon up -d connector-amazon`.
-Setup: [`connectors/amazon/README.md`](connectors/amazon/README.md).
+### Amazon Business — manueller Bulk-Export, 1-2x im Jahr
+Kein Connector-Code: Amazon Business hat einen eingebauten Sammel-Export
+("Business Analytics" → Berichte → Bestellungen → Zeitraum wählen →
+Rechnungen als ZIP herunterladen, bis zu 2000 Dokumente pro Durchgang, bis zu
+5 Jahre rückwirkend). ZIP entpacken, PDFs in `./data/dropzone` legen — der
+**Dropzone-Connector** (s.u.) lädt sie automatisch nach Docspell hoch. Details
+und Begründung, warum hier bewusst nicht automatisiert wird:
+[`docs/amazon-business-export.md`](docs/amazon-business-export.md).
 
 ### AliExpress — über Gmail abgedeckt
 Kein eigener Browser-Connector (zu instabil, siehe unten), stattdessen eine
@@ -141,13 +118,10 @@ automatisch mit Tag `Manuell` nach Docspell hochgeladen und danach in
 Jeder Connector zählt aufeinanderfolgende Fehlschläge (`connectors/common/state.py`)
 und schickt ab einer konfigurierbaren Schwelle (`*_ALERT_AFTER_FAILURES` in
 `.env`, Default 3) eine Push-Benachrichtigung über
-[ntfy](https://github.com/binwiederhier/ntfy) — z.B. bei abgelaufener
-Amazon-Session oder einer nicht mehr abrufbaren Gmail-API. Der
-Amazon-Connector alarmiert zusätzlich, wenn er wiederholt **keine**
-Bestellungen findet (`AMAZON_ALERT_AFTER_EMPTY_RUNS`) — typisches Zeichen für
-ein geändertes Amazon-Seitenlayout. Ohne gesetzte `NTFY_URL`/`NTFY_TOPIC` in
-`.env` sind Benachrichtigungen einfach aus (kein Fehler). Am
-datenschutzfreundlichsten: ntfy selbst hosten statt ntfy.sh zu nutzen.
+[ntfy](https://github.com/binwiederhier/ntfy) — z.B. bei einer nicht mehr
+abrufbaren Gmail-API. Ohne gesetzte `NTFY_URL`/`NTFY_TOPIC` in `.env` sind
+Benachrichtigungen einfach aus (kein Fehler). Am datenschutzfreundlichsten:
+ntfy selbst hosten statt ntfy.sh zu nutzen.
 
 ### Backups
 `scripts/backup.sh` sichert Datenbank-Dump + `./data` client-seitig
@@ -188,10 +162,8 @@ aktuellen Tag auf https://github.com/docspell/docspell/releases prüfen.
   unter `./data` auf deinem Server/NAS. Keine Cloud-OCR, kein Upload an
   Dritt-Dienste.
 - **Minimalprinzip bei Zugriffsrechten**: Gmail-Scope ist rein lesend; der
-  Amazon-Bulk-Export ist ein manueller Download durch euch selbst (keine
-  gespeicherten Amazon-Zugangsdaten nötig); die optionale Amazon-Business-API
-  läuft über euren eigenen OAuth2-Consent; der Playwright-Fallback für
-  private Konten speichert nur Session-Cookies, nie ein Passwort.
+  Amazon-Bulk-Export ist ein manueller Download durch euch selbst — keine
+  Amazon-Zugangsdaten liegen je in diesem System.
 - **Verschlüsselung**: Für Belege mit personenbezogenen/sensiblen Daten
   empfiehlt sich zusätzlich Festplattenverschlüsselung des Host-Systems
   (LUKS/BitLocker/FileVault) — das deckt dieses Setup nicht selbst ab.
@@ -216,17 +188,9 @@ cd Belegwirtschaft
 docker compose up -d                      # startet Docspell + Gmail + Dropzone
 open http://localhost:7880                # ersten Docspell-Account anlegen
 
-# Amazon Business: monatlich Business-Analytics-Export in ./data/dropzone
-# entpacken, siehe connectors/amazon-business/README.md — kein weiterer
-# Setup-Schritt nötig, der Dropzone-Connector läuft schon.
-#
-# Optional für später (nur falls zutreffend):
-#   Amazon-Business-API mit Entwicklerzugang:
-#     connectors/amazon-business/README.md (Weg B) folgen, dann
-#     docker compose --profile amazon-business-api up -d connector-amazon-business
-#   Privates (Nicht-Business-)Amazon-Konto:
-#     connectors/amazon/README.md folgen, dann
-#     docker compose --profile legacy-private-amazon up -d connector-amazon
+# Amazon Business: 1-2x im Jahr Business-Analytics-Export in ./data/dropzone
+# entpacken, siehe docs/amazon-business-export.md — kein weiterer Setup-Schritt
+# nötig, der Dropzone-Connector läuft schon.
 ```
 
 **Hinweis zur Docspell-Konfiguration:** `docker-compose.yml` und
@@ -241,16 +205,15 @@ authentifizierte Such-API hinter dem Steuerberater-Export
 ## Verzeichnisstruktur
 
 ```
-docker-compose.yml          # Docspell-Kern + alle Connectors
+docker-compose.yml          # Docspell-Kern + Connectors
 docspell/                   # Docspell-Konfigurationsdateien
 config/sources.yaml         # Gmail-Erkennungsregeln (Absender → Tags/Ordner)
+docs/
+  amazon-business-export.md # Anleitung: manueller Amazon-Business-Rechnungsexport
 connectors/
   common/                   # Docspell-Clients (Upload + authentifizierte Suche),
                              # Dedupe-/Fehler-State, ntfy-Alarme, Betrag-Extraktion
   gmail/                    # Gmail-Connector (OAuth2, gmail.readonly)
-  amazon-business/          # Anleitung manueller Bulk-Export (Standard) + optionale
-                             # offizielle API (LWA-OAuth2, braucht Entwicklerzugang)
-  amazon/                   # Fallback für private Konten (Playwright, standardmässig aus)
   dropzone/                 # Manuelles Scannen per Handy + Amazon-Bulk-Export-Aufnahme
 scripts/
   setup.sh                  # Einmaliges Setup (Verzeichnisse, .env)
@@ -264,9 +227,3 @@ data/                       # ALLE persistenten Daten (git-ignoriert)
 - Die authentifizierte Docspell-Such-API (`docspell_query.py`) einmal gegen
   eure laufende Instanz testen, bevor der Steuerberater-Export in einen festen
   Ablauf übernommen wird.
-- Amazon-Business-API-Endpunkte (`connectors/amazon-business/amazon_business_connector.py`,
-  alle mit `# ADJUST` markierten Stellen) gegen die echte Doku prüfen, sobald
-  ihr als Entwickler Zugriff habt — siehe `connectors/amazon-business/README.md`.
-- Nur falls der private Amazon-Fallback genutzt wird: CSS-Selektoren
-  (`connectors/amazon/amazon_connector.py`, oberer Abschnitt) ggf. anpassen,
-  falls beim ersten Lauf keine Bestellungen gefunden werden.
