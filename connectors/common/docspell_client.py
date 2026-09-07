@@ -65,7 +65,9 @@ class DocspellClient:
         if meta.folder:
             meta_json["folder"] = meta.folder
         if meta.tags:
-            meta_json["tags"] = meta.tags
+            # Docspells "StringList"-Schema erwartet ein Objekt {"items": [...]},
+            # keine nackte Liste (siehe ItemUploadMeta/StringList im OpenAPI-Schema).
+            meta_json["tags"] = {"items": meta.tags}
 
         files = {"file": (filename, content)}
         data = {"meta": _to_json(meta_json)}
