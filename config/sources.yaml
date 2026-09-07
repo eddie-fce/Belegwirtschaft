@@ -46,13 +46,10 @@ rules:
     tags: ["Rechnung", "Unsortiert"]
     folder: "Sonstige"
 
-# Anhänge, die ignoriert werden sollen (z.B. Signaturbilder, Logos, eingebettete
-# Bilder ohne echten Dateinamen — beobachtet als literal "inline" oder "image001"
-# ohne Endung, z.B. bei Amazon/AliExpress/PayPal-Marketingmails)
-ignore_attachment_patterns:
-  - "*.png"
-  - "*.jpg"
-  - "*.gif"
-  - "logo*"
-  - "inline*"
-  - "image*"
+# Whitelist statt Blacklist: nur Anhänge, die auf eines dieser Muster passen,
+# werden überhaupt hochgeladen — alles andere (Logos, Signaturbilder,
+# eingebettete Bilder/Tracking-Pixel ohne echten Dateinamen wie "inline", …)
+# wird ignoriert. Echte Rechnungen/Belege kommen praktisch immer als PDF an;
+# fotografierte Belege laufen ohnehin über den Dropzone-Connector, nicht Gmail.
+allowed_attachment_patterns:
+  - "*.pdf"
