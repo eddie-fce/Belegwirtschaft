@@ -92,10 +92,23 @@ services:
       DOCSPELL_SERVER_BACKEND_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DOCSPELL_SERVER_BACKEND_JDBC_USER: ${POSTGRES_USER}
       DOCSPELL_SERVER_BACKEND_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
-      DOCSPELL_SERVER_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
-      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_ENABLED: "true"
-      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_BASIC_ENABLED: "false"
-      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_HEADER_HEADER_VALUE: ${DOCSPELL_INTEGRATION_SECRET}
+      # WICHTIG zur Env-Var-Syntax (siehe docspell/config/EnvConfig.scala): ein
+      # einzelner Unterstrich wird zu einem Punkt (Verschachtelung), ZWEI
+      # Unterstriche werden zu einem Bindestrich. Config-Schlüssel wie
+      # "full-text-search" oder "integration-endpoint" enthalten Bindestriche
+      # und brauchen daher an der Stelle "__" (doppelt) — ein einzelner
+      # Unterstrich landet sonst auf einem falschen, nicht existierenden Pfad
+      # und wird stillschweigend ignoriert (kein Fehler, einfach wirkungslos).
+      DOCSPELL_SERVER_FULL__TEXT__SEARCH_ENABLED: "true"
+      DOCSPELL_SERVER_FULL__TEXT__SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_ENABLED: "true"
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__BASIC_ENABLED: "false"
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_ENABLED: "true"
+      # Header-Name an den passen, was connectors/common/docspell_client.py
+      # tatsächlich sendet ("Docspell-Integration-Secret"), statt Docspells
+      # eigenen Default ("Docspell-Integration") zu verwenden.
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_HEADER__NAME: "Docspell-Integration-Secret"
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_HEADER__VALUE: ${DOCSPELL_INTEGRATION_SECRET}
       # Für die Ersteinrichtung (Konten für Benedikt/Edwin anlegen) in .env kurz
       # DOCSPELL_SIGNUP_MODE=open setzen, "docker compose up -d" laufen lassen,
       # Konten unter http://localhost:7880 anlegen, danach unbedingt wieder auf
@@ -151,7 +164,10 @@ services:
       DOCSPELL_JOEX_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DOCSPELL_JOEX_JDBC_USER: ${POSTGRES_USER}
       DOCSPELL_JOEX_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
-      DOCSPELL_JOEX_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      # Gleiche Env-Var-Syntax-Regel wie bei docspell-restserver oben: "full-text-
+      # search" enthält Bindestriche, daher doppelter statt einfacher Unterstrich.
+      DOCSPELL_JOEX_FULL__TEXT__SEARCH_ENABLED: "true"
+      DOCSPELL_JOEX_FULL__TEXT__SEARCH_SOLR_URL: http://solr:8983/solr/docspell
       # Gleicher Grund wie bei docspell-restserver oben: ohne das bindet joex
       # nur an 127.0.0.1 im Container und ist dann selbst für restserver (das
       # joex intern per HTTP über den Docker-Netzwerknamen "docspell-joex"
