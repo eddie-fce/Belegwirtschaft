@@ -11,13 +11,15 @@ laufende Docspell-Instanz getestet werden konnte (siehe Kommentare dort).
 Erster Testlauf daher am besten mit einem kleinen Zeitraum, um das Ergebnis
 zu prüfen, bevor es Teil eines wiederkehrenden Ablaufs wird.
 
-Nutzung:
-  # Ganzes Jahr auf einmal (deckt den üblichen Fall "Steuerberater will 2026"):
-  python scripts/export_for_tax_advisor.py --year 2026 --out data/export-2026.zip
+Nutzung (empfohlen: containerisiert über docker-compose, kein lokales Python
+nötig — siehe Service "export-tax-advisor" in docker-compose.yml):
+  docker compose run --rm export-tax-advisor --year 2026 --out /data/export-2026.zip
+  docker compose run --rm export-tax-advisor --from 2026-01-01 --to 2026-03-31 \
+      --out /data/export-q1-2026.zip
 
-  # Oder ein beliebiger Zeitraum:
-  python scripts/export_for_tax_advisor.py --from 2026-01-01 --to 2026-03-31 \
-      --out data/export-q1-2026.zip
+Alternativ direkt mit lokalem Python (aus dem Projekt-Root, mit installierten
+Abhängigkeiten aus scripts/requirements.txt):
+  python scripts/export_for_tax_advisor.py --year 2026 --out data/export-2026.zip
 """
 
 from __future__ import annotations

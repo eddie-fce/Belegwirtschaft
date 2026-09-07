@@ -190,11 +190,17 @@ nicht automatisch eingerichtet, damit nicht ungefragt in eure Systemd/Cron-
 Konfiguration eingegriffen wird.
 
 ### Steuerberater-Export
+Läuft als On-Demand-Tool im Stack (kein Dauer-Dienst, kein Python auf der
+NAS nötig — QNAP/QTS hat das nicht selbstverständlich vorinstalliert):
 ```bash
-python scripts/export_for_tax_advisor.py --year 2026 --out data/export-2026.zip
+docker compose run --rm export-tax-advisor --year 2026 --out /data/export-2026.zip
 # oder ein beliebiger Zeitraum:
-python scripts/export_for_tax_advisor.py --from 2026-01-01 --to 2026-03-31 --out data/export-q1-2026.zip
+docker compose run --rm export-tax-advisor --from 2026-01-01 --to 2026-03-31 --out /data/export-q1-2026.zip
 ```
+Landet danach unter `./data/export-2026.zip` auf dem Host — von dort per File
+Station abrufbar wie alles andere unter `./data`, z.B. um es dem
+Steuerberater per Mail/Upload zu schicken.
+
 Packt alle als "Rechnung" getaggten Belege eines Zeitraums als ZIP —
 **innerhalb des ZIPs nach Jahr/Monat sortiert** (z.B. `2026/03/2026-03-15_...pdf`),
 plus eine `manifest.csv` mit derselben Jahr/Monat-Spalte. Genau die Struktur,

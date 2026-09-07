@@ -201,6 +201,31 @@ services:
     networks:
       - internet
 
+  # Kein Dauer-Dienst, sondern ein On-Demand-Werkzeug: läuft nur, wenn ihr
+  # explizit einen Steuerberater-Export braucht (Python ist auf QNAP/QTS nicht
+  # selbstverständlich vorhanden, deshalb containerisiert statt "einfach lokal
+  # ausführen"). "profiles: tools" verhindert, dass es bei "docker compose up"
+  # automatisch mitstartet.
+  #
+  # Aufruf:
+  #   docker compose run --rm export-tax-advisor --year 2026 --out /data/export-2026.zip
+  # Landet danach unter ./data/export-2026.zip auf dem Host (per File Station
+  # abrufbar, wie alles andere unter ./data).
+  export-tax-advisor:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile
+    mem_limit: 128m
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_ACCOUNT: ${DOCSPELL_ACCOUNT}
+      DOCSPELL_PASSWORD: ${DOCSPELL_PASSWORD}
+    volumes:
+      - ./data:/data
+    networks:
+      - internal
+
 networks:
   # Docspell-Kern + DB + Solr reden nur miteinander, kein Internetzugriff nötig/erlaubt.
   internal:
