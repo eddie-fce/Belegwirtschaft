@@ -97,6 +97,11 @@ services:
       DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_BASIC_ENABLED: "false"
       DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_HEADER_HEADER_VALUE: ${DOCSPELL_INTEGRATION_SECRET}
       DOCSPELL_SERVER_BACKEND_SIGNUP_MODE: closed
+      # Ohne das bindet Docspell nur an 127.0.0.1 IM CONTAINER (siehe Log-Zeile
+      # "Ember-Server service bound to address: 127.0.0.1:7880") — dadurch ist
+      # es weder über den published Port noch von anderen Containern im
+      # gleichen Docker-Netz erreichbar, und der Healthcheck oben schlägt fehl.
+      DOCSPELL_SERVER_BIND_ADDRESS: "0.0.0.0"
     volumes:
       - ./data/docspell-files:/opt/docspell/files
       - ./docspell/docspell-server.conf:/opt/docspell.conf:ro
@@ -133,6 +138,11 @@ services:
       DOCSPELL_JOEX_JDBC_USER: ${POSTGRES_USER}
       DOCSPELL_JOEX_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
       DOCSPELL_JOEX_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      # Gleicher Grund wie bei docspell-restserver oben: ohne das bindet joex
+      # nur an 127.0.0.1 im Container und ist dann selbst für restserver (das
+      # joex intern per HTTP über den Docker-Netzwerknamen "docspell-joex"
+      # ueber neue Jobs benachrichtigt) nicht erreichbar.
+      DOCSPELL_JOEX_BIND_ADDRESS: "0.0.0.0"
     volumes:
       - ./data/docspell-files:/opt/docspell/files
       - ./docspell/docspell-joex.conf:/opt/docspell.conf:ro
