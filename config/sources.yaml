@@ -46,9 +46,21 @@ rules:
     tags: ["Rechnung", "Unsortiert"]
     folder: "Sonstige"
 
-# Anhänge, die ignoriert werden sollen (z.B. Signaturbilder, Logos)
+# Whitelist statt Blacklist: nur Anhänge, die auf eines dieser Muster passen,
+# werden überhaupt hochgeladen — alles andere (Logos, Signaturbilder,
+# eingebettete Bilder/Tracking-Pixel ohne echten Dateinamen wie "inline", …)
+# wird ignoriert. Echte Rechnungen/Belege kommen praktisch immer als PDF an;
+# fotografierte Belege laufen ohnehin über den Dropzone-Connector, nicht Gmail.
+allowed_attachment_patterns:
+  - "*.pdf"
+
+# Zweite Stufe NACH der Whitelist oben: echte PDFs, die aber trotzdem keine
+# Belege sind — z.B. AGB/Widerruf/Datenschutz-PDFs, die manche Anbieter (Post/
+# DHL-Frankierbestätigungen, Onlineshops) an dieselbe Mail wie die eigentliche
+# Rechnung dranhängen. Bei Bedarf einfach weitere Muster ergänzen, sobald neue
+# Fälle auffallen.
 ignore_attachment_patterns:
-  - "*.png"
-  - "*.jpg"
-  - "*.gif"
-  - "logo*"
+  - "*agb*"
+  - "*bedingungen*"
+  - "*widerruf*"
+  - "*datenschutz*"

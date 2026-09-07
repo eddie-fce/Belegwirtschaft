@@ -1,10 +1,12 @@
 # Belegwirtschaft — lokales, selbst gehostetes Belegmanagement auf Basis von Docspell.
 #
-# WICHTIG: Die Docspell-Images/Env-Var-Namen unten sind nach bestem Wissen aus der
-# offiziellen Docspell-Dokumentation zusammengestellt (https://docspell.org/docs/install/docker/).
-# In dieser Sandbox war der Zugriff auf docspell.org netzwerkseitig blockiert, daher bitte
-# vor dem ersten Start einmal gegen die aktuelle Doku gegenchecken (Image-Tags, ggf. neue
-# Env-Var-Namen). Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
+# WICHTIG: Die Image-Registry wurde im Praxisbetrieb korrigiert (ghcr.io statt
+# des archivierten "docspell/restserver" auf Docker Hub, siehe Kommentar bei
+# docspell-restserver unten) — das ist jetzt verifiziert. Die Docspell-Env-Var-
+# Namen selbst stammen weiterhin nach bestem Wissen aus der offiziellen Doku
+# (https://docspell.org/docs/install/docker/), ohne Möglichkeit zur Live-Prüfung
+# beim Erstellen dieses Setups — bei unerwartetem Verhalten dort gegenchecken.
+# Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
 #
 # Alle Daten (Belege, Datenbank, Sessions) landen ausschliesslich in ./data auf diesem Host.
 # Es gibt keine Verbindung nach aussen ausser der Gmail-API (Google) — nur vom
@@ -69,12 +71,16 @@ services:
       - internal
 
   docspell-restserver:
-    # Versionsgepinnt statt ":latest" (Reproduzierbarkeit — ein Update im
-    # Hintergrund soll den Stack nicht überraschend brechen). Der Tag hier ist ein
-    # Platzhalter aus Trainingswissen (docspell.org war beim Erstellen dieses Setups
-    # nicht erreichbar) — bitte auf https://github.com/docspell/docspell/releases die
-    # aktuell gewünschte Version prüfen und in .env eintragen.
-    image: docspell/restserver:${DOCSPELL_VERSION}
+    # WICHTIG: Das alte "docspell/restserver" auf Docker Hub ist archiviert
+    # (letzter Tag dort: v0.42.0, kein v0.43.0). Docspell veröffentlicht Images
+    # jetzt unter ghcr.io — bestätigt gegen https://github.com/docspell/docker
+    # (offizielles docker-compose-Beispiel dort). "latest" ist der dort
+    # verifizierte, funktionierende Wert; eine bestimmte Version zu pinnen war
+    # zum Zeitpunkt dieser Änderung nicht zuverlässig prüfbar (ghcr.io zeigt
+    # Tags nicht ohne Weiteres in einer einfach durchsuchbaren Liste) — bei
+    # Bedarf https://github.com/docspell/docspell/pkgs/container/restserver
+    # nach konkreten Versions-Tags durchsuchen und in .env eintragen.
+    image: ghcr.io/docspell/restserver:${DOCSPELL_VERSION}
     restart: unless-stopped
     mem_limit: 384m
     depends_on:
@@ -86,32 +92,64 @@ services:
       DOCSPELL_SERVER_BACKEND_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DOCSPELL_SERVER_BACKEND_JDBC_USER: ${POSTGRES_USER}
       DOCSPELL_SERVER_BACKEND_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
-      DOCSPELL_SERVER_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
-      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_ENABLED: "true"
-      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_BASIC_ENABLED: "false"
-      DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_HEADER_HEADER_VALUE: ${DOCSPELL_INTEGRATION_SECRET}
-      DOCSPELL_SERVER_BACKEND_SIGNUP_MODE: closed
+      # WICHTIG zur Env-Var-Syntax (siehe docspell/config/EnvConfig.scala): ein
+      # einzelner Unterstrich wird zu einem Punkt (Verschachtelung), ZWEI
+      # Unterstriche werden zu einem Bindestrich. Config-Schlüssel wie
+      # "full-text-search" oder "integration-endpoint" enthalten Bindestriche
+      # und brauchen daher an der Stelle "__" (doppelt) — ein einzelner
+      # Unterstrich landet sonst auf einem falschen, nicht existierenden Pfad
+      # und wird stillschweigend ignoriert (kein Fehler, einfach wirkungslos).
+      DOCSPELL_SERVER_FULL__TEXT__SEARCH_ENABLED: "true"
+      DOCSPELL_SERVER_FULL__TEXT__SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_ENABLED: "true"
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__BASIC_ENABLED: "false"
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_ENABLED: "true"
+      # Header-Name an den passen, was connectors/common/docspell_client.py
+      # tatsächlich sendet ("Docspell-Integration-Secret"), statt Docspells
+      # eigenen Default ("Docspell-Integration") zu verwenden.
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_HEADER__NAME: "Docspell-Integration-Secret"
+      DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_HEADER__VALUE: ${DOCSPELL_INTEGRATION_SECRET}
+      # Für die Ersteinrichtung (Konten für Benedikt/Edwin anlegen) in .env kurz
+      # DOCSPELL_SIGNUP_MODE=open setzen, "docker compose up -d" laufen lassen,
+      # Konten unter http://localhost:7880 anlegen, danach unbedingt wieder auf
+      # "closed" zurückstellen (und erneut "up -d") — "closed" ist der sichere
+      # Normalzustand, in dem niemand mehr neue Konten anlegen kann.
+      DOCSPELL_SERVER_BACKEND_SIGNUP_MODE: ${DOCSPELL_SIGNUP_MODE:-closed}
+      # Ohne das bindet Docspell nur an 127.0.0.1 IM CONTAINER (siehe Log-Zeile
+      # "Ember-Server service bound to address: 127.0.0.1:7880") — dadurch ist
+      # es weder über den published Port noch von anderen Containern im
+      # gleichen Docker-Netz erreichbar, und der Healthcheck oben schlägt fehl.
+      DOCSPELL_SERVER_BIND_ADDRESS: "0.0.0.0"
     volumes:
       - ./data/docspell-files:/opt/docspell/files
       - ./docspell/docspell-server.conf:/opt/docspell.conf:ro
     ports:
-      # Nur an localhost binden, nicht am gesamten Netzwerk — Zugriff per SSH-Tunnel
-      # oder VPN, falls du von ausserhalb zugreifen willst.
-      - "127.0.0.1:7880:7880"
+      # Standardmässig nur an localhost gebunden — Zugriff von einem anderen
+      # Rechner nur per SSH-Tunnel oder VPN. Falls SSH-Portforwarding auf dem
+      # NAS serverseitig deaktiviert ist ("administratively prohibited"),
+      # DOCSPELL_BIND_HOST in .env vorübergehend auf 0.0.0.0 stellen (dann per
+      # http://<NAS-LAN-IP>:7880 direkt aus dem eigenen Netz erreichbar, aber
+      # NICHT aus dem Internet, solange der Router den Port nicht weiterleitet)
+      # und danach wieder auf 127.0.0.1 zurückstellen.
+      - "${DOCSPELL_BIND_HOST:-127.0.0.1}:7880:7880"
     healthcheck:
-      # Kein curl/wget vorausgesetzt — reiner TCP-Connect-Test per Bash, das in den
-      # Docspell-Images vorhanden sein sollte (sbt-native-packager-Basis). Falls nicht:
-      # Healthcheck entfernen, depends_on unten auf "service_started" zurückstellen.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/7880 && exec 3<&-"]
+      # Kein curl/wget vorausgesetzt — reiner TCP-Connect-Test per Bash, das im
+      # Docspell-Image vorhanden ist (sbt-native-packager-Basis). WICHTIG: explizit
+      # "bash -c" statt CMD-SHELL, da CMD-SHELL immer /bin/sh nutzt — und das ist in
+      # diesem Image kein Bash-Symlink, kennt die /dev/tcp-Umleitung also nicht
+      # ("cannot create /dev/tcp/... Directory nonexistent"), obwohl der Server
+      # selbst längst erreichbar ist.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7880 && exec 3<&-"]
       interval: 10s
       timeout: 5s
       retries: 15
       start_period: 30s
     networks:
       - internal
+      - hostaccess
 
   docspell-joex:
-    image: docspell/joex:${DOCSPELL_VERSION}
+    image: ghcr.io/docspell/joex:${DOCSPELL_VERSION}
     restart: unless-stopped
     # OCR/Textanalyse braucht mehr Headroom als restserver — bei häufigen
     # Out-of-Memory-Abbrüchen (siehe docs/deploy-qnap.md) hier zuerst erhöhen,
@@ -126,7 +164,24 @@ services:
       DOCSPELL_JOEX_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DOCSPELL_JOEX_JDBC_USER: ${POSTGRES_USER}
       DOCSPELL_JOEX_JDBC_PASSWORD: ${POSTGRES_PASSWORD}
-      DOCSPELL_JOEX_FULL_TEXT_SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      # Gleiche Env-Var-Syntax-Regel wie bei docspell-restserver oben: "full-text-
+      # search" enthält Bindestriche, daher doppelter statt einfacher Unterstrich.
+      DOCSPELL_JOEX_FULL__TEXT__SEARCH_ENABLED: "true"
+      DOCSPELL_JOEX_FULL__TEXT__SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      # Stanford-NLP (Korrespondent-/Datum-Vorschläge, Auto-Tagging) braucht laut
+      # Docspell-Doku selbst im leichtesten Modus ("basic") ~500M Heap, im vollen
+      # Modus ("full", der Default) >=1400M — beides sprengt den mem_limit dieses
+      # Containers auf der schwachen NAS-Hardware bei weitem (beobachtet:
+      # "OutOfMemoryError: Java heap space" beim Laden des deutschen Stanford-NLP-
+      # Modells während der Textanalyse). Betrifft nur Vorschläge/Auto-Tagging,
+      # NICHT Upload, OCR-Texterkennung oder Volltextsuche — die bleiben unberührt.
+      DOCSPELL_JOEX_TEXT__ANALYSIS_NLP_MODE: "disabled"
+      DOCSPELL_JOEX_TEXT__ANALYSIS_CLASSIFICATION_ENABLED: "false"
+      # Gleicher Grund wie bei docspell-restserver oben: ohne das bindet joex
+      # nur an 127.0.0.1 im Container und ist dann selbst für restserver (das
+      # joex intern per HTTP über den Docker-Netzwerknamen "docspell-joex"
+      # ueber neue Jobs benachrichtigt) nicht erreichbar.
+      DOCSPELL_JOEX_BIND_ADDRESS: "0.0.0.0"
     volumes:
       - ./data/docspell-files:/opt/docspell/files
       - ./docspell/docspell-joex.conf:/opt/docspell.conf:ro
@@ -242,4 +297,13 @@ networks:
   # Nur die Connectors + Syncthing hängen zusätzlich hier dran (Gmail-API,
   # Handy-Sync, optional ntfy).
   internet:
+    driver: bridge
+  # Nur für docspell-restserver zusätzlich zu "internal": ein "internal: true"-
+  # Netzwerk lässt Docker grundsätzlich keine Ports zum Host durchreichen (kein
+  # Docspell-spezifisches Problem, gilt für jeden Container, der ausschliesslich
+  # an einem internen Netzwerk hängt) — ohne dieses zweite, normale Bridge-Netz
+  # bliebe "127.0.0.1:7880:7880" unten wirkungslos, obwohl Docker die Bindung
+  # anstandslos entgegennimmt. db/solr/joex bleiben unberührt davon, da sie
+  # weiterhin nur an "internal" hängen.
+  hostaccess:
     driver: bridge

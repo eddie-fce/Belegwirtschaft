@@ -32,7 +32,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "common"))
+# Im Docker-Image liegt "common/" direkt neben dieser Datei (vom Dockerfile so
+# kopiert); in einem rohen Git-Checkout liegt es stattdessen eine Ebene höher
+# unter connectors/common. Beide Fälle abdecken.
+_here = Path(__file__).resolve().parent
+for _candidate in (_here, _here.parent):
+    if (_candidate / "common").is_dir():
+        sys.path.insert(0, str(_candidate))
+        break
+
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
 from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
 from common.notify import notify  # noqa: E402

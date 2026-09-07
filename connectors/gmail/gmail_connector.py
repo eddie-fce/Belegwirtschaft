@@ -31,7 +31,16 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "common"))
+# Im Docker-Image liegt "common/" direkt neben dieser Datei (vom Dockerfile so
+# kopiert); in einem rohen Git-Checkout (z.B. für den lokalen --login-Schritt)
+# liegt es stattdessen eine Ebene höher unter connectors/common. Beide Fälle
+# abdecken, damit --login ohne manuelles Kopieren funktioniert.
+_here = Path(__file__).resolve().parent
+for _candidate in (_here, _here.parent):
+    if (_candidate / "common").is_dir():
+        sys.path.insert(0, str(_candidate))
+        break
+
 from common.amount_extract import extract_amount  # noqa: E402
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
 from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
@@ -42,16 +51,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("gmail-connector")
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-SECRETS_DIR = Path("/secrets")
+# /secrets ist der Pfad im Docker-Container (per Volume gemountet, siehe
+# docker-compose.yml) — der existiert nur dort. Für den lokalen --login-Schritt
+# (ausserhalb von Docker, siehe README) auf den secrets/-Ordner neben diesem
+# Skript zurückfallen, genau dort, wohin die README-Anleitung credentials.json
+# legen lässt.
+SECRETS_DIR = Path("/secrets") if Path("/secrets").is_dir() else Path(__file__).resolve().parent / "secrets"
 STATE_DB = Path("/state/gmail.sqlite3")
 CONFIG_PATH = Path("/config/sources.yaml")
 MONTHLY_MIRROR_DIR = Path("/monthly")
 
 
-def load_rules() -> tuple[list[dict], list[str]]:
+def load_rules() -> tuple[list[dict], list[str], list[str]]:
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    return cfg.get("rules", []), cfg.get("ignore_attachment_patterns", [])
+    return (
+        cfg.get("rules", []),
+        cfg.get("allowed_attachment_patterns", ["*.pdf"]),
+        cfg.get("ignore_attachment_patterns", []),
+    )
 
 
 def get_credentials(interactive: bool) -> Credentials:
@@ -88,11 +106,17 @@ def get_credentials(interactive: bool) -> Credentials:
     return creds
 
 
-def matches_ignore(filename: str, patterns: list[str]) -> bool:
+def is_allowed_attachment(filename: str, patterns: list[str]) -> bool:
+    """Whitelist statt Blacklist: nur was explizit erlaubt ist (per Default nur
+    *.pdf) wird hochgeladen. Bilder (Logos, Signaturen, Tracking-Pixel, oft ganz
+    ohne echten Dateinamen wie "inline") sind bei Mails nie echte Belege — die
+    kommen bei diesem Setup über den Dropzone-Connector (Handyfoto) rein."""
     return any(fnmatch.fnmatch(filename.lower(), p.lower()) for p in patterns)
 
 
-def fetch_attachments(service, msg_id: str, ignore_patterns: list[str]) -> list[tuple[str, bytes]]:
+def fetch_attachments(
+    service, msg_id: str, allowed_patterns: list[str], ignore_patterns: list[str]
+) -> list[tuple[str, bytes]]:
     msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
     parts = _walk_parts(msg.get("payload", {}))
     out = []
@@ -101,7 +125,12 @@ def fetch_attachments(service, msg_id: str, ignore_patterns: list[str]) -> list[
         body = part.get("body", {})
         if not filename or "attachmentId" not in body:
             continue
-        if matches_ignore(filename, ignore_patterns):
+        if not is_allowed_attachment(filename, allowed_patterns):
+            continue
+        # Zweite Stufe NACH der PDF-Whitelist: manche Mails hängen neben der
+        # eigentlichen Rechnung noch AGB/Widerruf/Datenschutz-PDFs an — die sind
+        # zwar echte PDFs, aber keine Belege.
+        if is_allowed_attachment(filename, ignore_patterns):
             continue
         att = (
             service.users()
@@ -161,7 +190,7 @@ def fetch_email_text(service, msg_id: str) -> str:
 
 
 def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
-    rules, ignore_patterns = load_rules()
+    rules, allowed_patterns, ignore_patterns = load_rules()
     label = os.environ.get("GMAIL_LABEL", "INBOX")
 
     for rule in rules:
@@ -176,7 +205,7 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
             if store.is_processed("gmail", msg_id):
                 continue
 
-            attachments = fetch_attachments(service, msg_id, ignore_patterns)
+            attachments = fetch_attachments(service, msg_id, allowed_patterns, ignore_patterns)
             if not attachments:
                 log.info("Keine passenden Anhänge in Mail %s, überspringe", msg_id)
                 store.mark_processed("gmail", msg_id)
