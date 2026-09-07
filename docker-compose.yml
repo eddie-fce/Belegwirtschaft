@@ -111,9 +111,14 @@ services:
       - ./data/docspell-files:/opt/docspell/files
       - ./docspell/docspell-server.conf:/opt/docspell.conf:ro
     ports:
-      # Nur an localhost binden, nicht am gesamten Netzwerk — Zugriff per SSH-Tunnel
-      # oder VPN, falls du von ausserhalb zugreifen willst.
-      - "127.0.0.1:7880:7880"
+      # Standardmässig nur an localhost gebunden — Zugriff von einem anderen
+      # Rechner nur per SSH-Tunnel oder VPN. Falls SSH-Portforwarding auf dem
+      # NAS serverseitig deaktiviert ist ("administratively prohibited"),
+      # DOCSPELL_BIND_HOST in .env vorübergehend auf 0.0.0.0 stellen (dann per
+      # http://<NAS-LAN-IP>:7880 direkt aus dem eigenen Netz erreichbar, aber
+      # NICHT aus dem Internet, solange der Router den Port nicht weiterleitet)
+      # und danach wieder auf 127.0.0.1 zurückstellen.
+      - "${DOCSPELL_BIND_HOST:-127.0.0.1}:7880:7880"
     healthcheck:
       # Kein curl/wget vorausgesetzt — reiner TCP-Connect-Test per Bash, das im
       # Docspell-Image vorhanden ist (sbt-native-packager-Basis). WICHTIG: explizit
