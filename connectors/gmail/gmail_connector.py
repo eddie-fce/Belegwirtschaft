@@ -62,10 +62,14 @@ CONFIG_PATH = Path("/config/sources.yaml")
 MONTHLY_MIRROR_DIR = Path("/monthly")
 
 
-def load_rules() -> tuple[list[dict], list[str]]:
+def load_rules() -> tuple[list[dict], list[str], list[str]]:
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    return cfg.get("rules", []), cfg.get("allowed_attachment_patterns", ["*.pdf"])
+    return (
+        cfg.get("rules", []),
+        cfg.get("allowed_attachment_patterns", ["*.pdf"]),
+        cfg.get("ignore_attachment_patterns", []),
+    )
 
 
 def get_credentials(interactive: bool) -> Credentials:
@@ -110,7 +114,9 @@ def is_allowed_attachment(filename: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(filename.lower(), p.lower()) for p in patterns)
 
 
-def fetch_attachments(service, msg_id: str, allowed_patterns: list[str]) -> list[tuple[str, bytes]]:
+def fetch_attachments(
+    service, msg_id: str, allowed_patterns: list[str], ignore_patterns: list[str]
+) -> list[tuple[str, bytes]]:
     msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
     parts = _walk_parts(msg.get("payload", {}))
     out = []
@@ -120,6 +126,11 @@ def fetch_attachments(service, msg_id: str, allowed_patterns: list[str]) -> list
         if not filename or "attachmentId" not in body:
             continue
         if not is_allowed_attachment(filename, allowed_patterns):
+            continue
+        # Zweite Stufe NACH der PDF-Whitelist: manche Mails hängen neben der
+        # eigentlichen Rechnung noch AGB/Widerruf/Datenschutz-PDFs an — die sind
+        # zwar echte PDFs, aber keine Belege.
+        if is_allowed_attachment(filename, ignore_patterns):
             continue
         att = (
             service.users()
@@ -179,7 +190,7 @@ def fetch_email_text(service, msg_id: str) -> str:
 
 
 def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
-    rules, allowed_patterns = load_rules()
+    rules, allowed_patterns, ignore_patterns = load_rules()
     label = os.environ.get("GMAIL_LABEL", "INBOX")
 
     for rule in rules:
@@ -194,7 +205,7 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
             if store.is_processed("gmail", msg_id):
                 continue
 
-            attachments = fetch_attachments(service, msg_id, allowed_patterns)
+            attachments = fetch_attachments(service, msg_id, allowed_patterns, ignore_patterns)
             if not attachments:
                 log.info("Keine passenden Anhänge in Mail %s, überspringe", msg_id)
                 store.mark_processed("gmail", msg_id)
