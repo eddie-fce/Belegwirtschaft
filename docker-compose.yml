@@ -168,6 +168,15 @@ services:
       # search" enthält Bindestriche, daher doppelter statt einfacher Unterstrich.
       DOCSPELL_JOEX_FULL__TEXT__SEARCH_ENABLED: "true"
       DOCSPELL_JOEX_FULL__TEXT__SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      # Stanford-NLP (Korrespondent-/Datum-Vorschläge, Auto-Tagging) braucht laut
+      # Docspell-Doku selbst im leichtesten Modus ("basic") ~500M Heap, im vollen
+      # Modus ("full", der Default) >=1400M — beides sprengt den mem_limit dieses
+      # Containers auf der schwachen NAS-Hardware bei weitem (beobachtet:
+      # "OutOfMemoryError: Java heap space" beim Laden des deutschen Stanford-NLP-
+      # Modells während der Textanalyse). Betrifft nur Vorschläge/Auto-Tagging,
+      # NICHT Upload, OCR-Texterkennung oder Volltextsuche — die bleiben unberührt.
+      DOCSPELL_JOEX_TEXT__ANALYSIS_NLP_MODE: "disabled"
+      DOCSPELL_JOEX_TEXT__ANALYSIS_CLASSIFICATION_ENABLED: "false"
       # Gleicher Grund wie bei docspell-restserver oben: ohne das bindet joex
       # nur an 127.0.0.1 im Container und ist dann selbst für restserver (das
       # joex intern per HTTP über den Docker-Netzwerknamen "docspell-joex"
