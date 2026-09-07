@@ -96,7 +96,12 @@ services:
       DOCSPELL_SERVER_INTEGRATION_ENDPOINT_ENABLED: "true"
       DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_BASIC_ENABLED: "false"
       DOCSPELL_SERVER_INTEGRATION_ENDPOINT_HTTP_HEADER_HEADER_VALUE: ${DOCSPELL_INTEGRATION_SECRET}
-      DOCSPELL_SERVER_BACKEND_SIGNUP_MODE: closed
+      # Für die Ersteinrichtung (Konten für Benedikt/Edwin anlegen) in .env kurz
+      # DOCSPELL_SIGNUP_MODE=open setzen, "docker compose up -d" laufen lassen,
+      # Konten unter http://localhost:7880 anlegen, danach unbedingt wieder auf
+      # "closed" zurückstellen (und erneut "up -d") — "closed" ist der sichere
+      # Normalzustand, in dem niemand mehr neue Konten anlegen kann.
+      DOCSPELL_SERVER_BACKEND_SIGNUP_MODE: ${DOCSPELL_SIGNUP_MODE:-closed}
       # Ohne das bindet Docspell nur an 127.0.0.1 IM CONTAINER (siehe Log-Zeile
       # "Ember-Server service bound to address: 127.0.0.1:7880") — dadurch ist
       # es weder über den published Port noch von anderen Containern im
