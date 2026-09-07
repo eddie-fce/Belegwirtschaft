@@ -243,11 +243,13 @@ Aktivierung/Feinschliff über `docspell/docspell-joex.conf` (Kommentare dort)
 — am wirkungsvollsten, sobald ein paar Dutzend Belege pro Correspondent
 sauber getaggt sind.
 
-### Versionspinning
-`docspell/restserver` und `docspell/joex` laufen auf einer festen, in `.env`
-gepinnten Version (`DOCSPELL_VERSION`) statt `:latest` — ein Update im
-Hintergrund soll den Stack nicht überraschend brechen. Vor dem ersten Start
-aktuellen Tag auf https://github.com/docspell/docspell/releases prüfen.
+### Docspell-Images
+`ghcr.io/docspell/restserver` und `ghcr.io/docspell/joex` (GitHub Container
+Registry — das alte `docspell/restserver` auf Docker Hub ist archiviert,
+letzter dortiger Tag war `v0.42.0`). `DOCSPELL_VERSION` in `.env` steht
+aktuell auf `latest` (bestätigt funktionierend); für eine gepinnte, feste
+Version die verfügbaren Tags unter
+https://github.com/docspell/docspell/pkgs/container/restserver durchsuchen.
 
 ## Datenschutz / DSGVO — Leitlinien dieses Aufbaus
 - **Alles lokal**: Belege, Datenbank, OCR-Index, Sessions liegen ausschliesslich

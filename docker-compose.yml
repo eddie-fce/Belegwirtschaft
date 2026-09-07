@@ -1,10 +1,12 @@
 # Belegwirtschaft — lokales, selbst gehostetes Belegmanagement auf Basis von Docspell.
 #
-# WICHTIG: Die Docspell-Images/Env-Var-Namen unten sind nach bestem Wissen aus der
-# offiziellen Docspell-Dokumentation zusammengestellt (https://docspell.org/docs/install/docker/).
-# In dieser Sandbox war der Zugriff auf docspell.org netzwerkseitig blockiert, daher bitte
-# vor dem ersten Start einmal gegen die aktuelle Doku gegenchecken (Image-Tags, ggf. neue
-# Env-Var-Namen). Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
+# WICHTIG: Die Image-Registry wurde im Praxisbetrieb korrigiert (ghcr.io statt
+# des archivierten "docspell/restserver" auf Docker Hub, siehe Kommentar bei
+# docspell-restserver unten) — das ist jetzt verifiziert. Die Docspell-Env-Var-
+# Namen selbst stammen weiterhin nach bestem Wissen aus der offiziellen Doku
+# (https://docspell.org/docs/install/docker/), ohne Möglichkeit zur Live-Prüfung
+# beim Erstellen dieses Setups — bei unerwartetem Verhalten dort gegenchecken.
+# Alles andere (Connectors, Volumes, Netzwerktrennung) ist eigenständig.
 #
 # Alle Daten (Belege, Datenbank, Sessions) landen ausschliesslich in ./data auf diesem Host.
 # Es gibt keine Verbindung nach aussen ausser der Gmail-API (Google) — nur vom
@@ -69,12 +71,16 @@ services:
       - internal
 
   docspell-restserver:
-    # Versionsgepinnt statt ":latest" (Reproduzierbarkeit — ein Update im
-    # Hintergrund soll den Stack nicht überraschend brechen). Der Tag hier ist ein
-    # Platzhalter aus Trainingswissen (docspell.org war beim Erstellen dieses Setups
-    # nicht erreichbar) — bitte auf https://github.com/docspell/docspell/releases die
-    # aktuell gewünschte Version prüfen und in .env eintragen.
-    image: docspell/restserver:${DOCSPELL_VERSION}
+    # WICHTIG: Das alte "docspell/restserver" auf Docker Hub ist archiviert
+    # (letzter Tag dort: v0.42.0, kein v0.43.0). Docspell veröffentlicht Images
+    # jetzt unter ghcr.io — bestätigt gegen https://github.com/docspell/docker
+    # (offizielles docker-compose-Beispiel dort). "latest" ist der dort
+    # verifizierte, funktionierende Wert; eine bestimmte Version zu pinnen war
+    # zum Zeitpunkt dieser Änderung nicht zuverlässig prüfbar (ghcr.io zeigt
+    # Tags nicht ohne Weiteres in einer einfach durchsuchbaren Liste) — bei
+    # Bedarf https://github.com/docspell/docspell/pkgs/container/restserver
+    # nach konkreten Versions-Tags durchsuchen und in .env eintragen.
+    image: ghcr.io/docspell/restserver:${DOCSPELL_VERSION}
     restart: unless-stopped
     mem_limit: 384m
     depends_on:
@@ -111,7 +117,7 @@ services:
       - internal
 
   docspell-joex:
-    image: docspell/joex:${DOCSPELL_VERSION}
+    image: ghcr.io/docspell/joex:${DOCSPELL_VERSION}
     restart: unless-stopped
     # OCR/Textanalyse braucht mehr Headroom als restserver — bei häufigen
     # Out-of-Memory-Abbrüchen (siehe docs/deploy-qnap.md) hier zuerst erhöhen,
