@@ -110,10 +110,13 @@ services:
       # oder VPN, falls du von ausserhalb zugreifen willst.
       - "127.0.0.1:7880:7880"
     healthcheck:
-      # Kein curl/wget vorausgesetzt — reiner TCP-Connect-Test per Bash, das in den
-      # Docspell-Images vorhanden sein sollte (sbt-native-packager-Basis). Falls nicht:
-      # Healthcheck entfernen, depends_on unten auf "service_started" zurückstellen.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/7880 && exec 3<&-"]
+      # Kein curl/wget vorausgesetzt — reiner TCP-Connect-Test per Bash, das im
+      # Docspell-Image vorhanden ist (sbt-native-packager-Basis). WICHTIG: explizit
+      # "bash -c" statt CMD-SHELL, da CMD-SHELL immer /bin/sh nutzt — und das ist in
+      # diesem Image kein Bash-Symlink, kennt die /dev/tcp-Umleitung also nicht
+      # ("cannot create /dev/tcp/... Directory nonexistent"), obwohl der Server
+      # selbst längst erreichbar ist.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7880 && exec 3<&-"]
       interval: 10s
       timeout: 5s
       retries: 15
