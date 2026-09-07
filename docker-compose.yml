@@ -109,6 +109,13 @@ services:
       # eigenen Default ("Docspell-Integration") zu verwenden.
       DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_HEADER__NAME: "Docspell-Integration-Secret"
       DOCSPELL_SERVER_INTEGRATION__ENDPOINT_HTTP__HEADER_HEADER__VALUE: ${DOCSPELL_INTEGRATION_SECRET}
+      # Nodes (restserver/joex) registrieren sich gegenseitig unter dieser Adresse
+      # in der DB, um sich direkt über neue/fertige Jobs zu benachrichtigen
+      # (docspell.pubsub.naive.NaivePubSub). Default ist "http://localhost:7880" —
+      # das zeigt aus Sicht von joex (anderer Container!) ins Leere ("Connection
+      # refused"), wodurch neue Jobs erst nach einem manuellen joex-Neustart
+      # aufgegriffen wurden, statt sofort benachrichtigt zu werden.
+      DOCSPELL_SERVER_INTERNAL__URL: http://docspell-restserver:7880
       # Für die Ersteinrichtung (Konten für Benedikt/Edwin anlegen) in .env kurz
       # DOCSPELL_SIGNUP_MODE=open setzen, "docker compose up -d" laufen lassen,
       # Konten unter http://localhost:7880 anlegen, danach unbedingt wieder auf
@@ -168,6 +175,11 @@ services:
       # search" enthält Bindestriche, daher doppelter statt einfacher Unterstrich.
       DOCSPELL_JOEX_FULL__TEXT__SEARCH_ENABLED: "true"
       DOCSPELL_JOEX_FULL__TEXT__SEARCH_SOLR_URL: http://solr:8983/solr/docspell
+      # Gleicher Grund wie DOCSPELL_SERVER_INTERNAL__URL oben: joex registriert sich
+      # unter dieser Adresse, damit restserver es direkt über neue Jobs
+      # benachrichtigen kann. Default "http://localhost:7878" zeigt aus Sicht von
+      # restserver (anderer Container!) ins Leere.
+      DOCSPELL_JOEX_BASE__URL: http://docspell-joex:7878
       # Stanford-NLP (Korrespondent-/Datum-Vorschläge, Auto-Tagging) braucht laut
       # Docspell-Doku selbst im leichtesten Modus ("basic") ~500M Heap, im vollen
       # Modus ("full", der Default) >=1400M — beides sprengt den mem_limit dieses
