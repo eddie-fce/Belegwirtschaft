@@ -190,11 +190,19 @@ nicht automatisch eingerichtet, damit nicht ungefragt in eure Systemd/Cron-
 Konfiguration eingegriffen wird.
 
 ### Steuerberater-Export
-`scripts/export_for_tax_advisor.py --from 2026-01-01 --to 2026-03-31 --out export.zip`
-packt alle als "Rechnung" getaggten Belege eines Zeitraums als ZIP mit
-Manifest-CSV. **Best-effort**: nutzt Docspells authentifizierte Such-/
-Download-API, die mangels Netzwerkzugriff auf docspell.org beim Bau dieses
-Repos nicht live verifiziert werden konnte (siehe Kommentare in
+```bash
+python scripts/export_for_tax_advisor.py --year 2026 --out data/export-2026.zip
+# oder ein beliebiger Zeitraum:
+python scripts/export_for_tax_advisor.py --from 2026-01-01 --to 2026-03-31 --out data/export-q1-2026.zip
+```
+Packt alle als "Rechnung" getaggten Belege eines Zeitraums als ZIP —
+**innerhalb des ZIPs nach Jahr/Monat sortiert** (z.B. `2026/03/2026-03-15_...pdf`),
+plus eine `manifest.csv` mit derselben Jahr/Monat-Spalte. Genau die Struktur,
+die Steuerberater typischerweise für die Abgabe erwarten, ohne dass Docspell
+selbst echte Ordner braucht (siehe oben, "Wie werden die Belege gespeichert").
+**Best-effort**: nutzt Docspells authentifizierte Such-/Download-API, die
+mangels Netzwerkzugriff auf docspell.org beim Bau dieses Repos nicht live
+verifiziert werden konnte (siehe Kommentare in
 `connectors/common/docspell_query.py`) — ersten Testlauf mit kleinem Zeitraum
 machen, bevor es Teil eines wiederkehrenden Ablaufs wird. Braucht einen
 normalen Docspell-Login (`DOCSPELL_ACCOUNT`/`DOCSPELL_PASSWORD` in `.env`),
