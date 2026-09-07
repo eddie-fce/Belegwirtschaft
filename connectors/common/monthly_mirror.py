@@ -1,6 +1,10 @@
 """Spiegelt jede hochgeladene Datei zusätzlich zu Docspell in einen echten,
-per File Station durchsuchbaren Jahr/Monat-Ordnerbaum — für den Steuerberater,
-der eine gewohnte Ordnerstruktur statt eines Docspell-Logins erwartet.
+per File Station durchsuchbaren Ordnerbaum — für den Steuerberater, der eine
+gewohnte Ordnerstruktur statt eines Docspell-Logins erwartet.
+
+Struktur: <Jahr>/<Eingang|Ausgang>/<Monat>/datei.pdf — "Eingang" für Belege,
+die die Firma empfangen hat (Einkäufe/Rechnungen von Lieferanten), "Ausgang"
+für Rechnungen, die die Firma selbst an ihre Kunden stellt.
 
 Läuft parallel zu Docspell, nicht als Ersatz: Docspell bleibt die
 durchsuchbare/getaggte Ablage, dieser Ordnerbaum ist eine reine
@@ -21,16 +25,26 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 log = logging.getLogger(__name__)
 
+Kind = Literal["Eingang", "Ausgang"]
 
-def mirror(base_dir: Path, filename: str, content: bytes, when: datetime | None = None) -> Path:
-    """Schreibt `content` unter base_dir/<Jahr>/<Monat>/<filename>. Bei einem
-    Namenskonflikt (z.B. zwei Belege mit identischem Dateinamen im selben
-    Monat) wird ein Zähler an den Dateinamen angehängt, statt zu überschreiben."""
+
+def mirror(
+    base_dir: Path,
+    filename: str,
+    content: bytes,
+    when: datetime | None = None,
+    kind: Kind = "Eingang",
+) -> Path:
+    """Schreibt `content` unter base_dir/<Jahr>/<Eingang|Ausgang>/<Monat>/<filename>.
+    Bei einem Namenskonflikt (z.B. zwei Belege mit identischem Dateinamen im
+    selben Monat) wird ein Zähler an den Dateinamen angehängt, statt zu
+    überschreiben."""
     when = when or datetime.now()
-    target_dir = base_dir / f"{when:%Y}" / f"{when:%m}"
+    target_dir = base_dir / f"{when:%Y}" / kind / f"{when:%m}"
     target_dir.mkdir(parents=True, exist_ok=True)
 
     target = target_dir / filename

@@ -22,9 +22,10 @@
 #
 # Jede von Gmail-/Dropzone-Connector hochgeladene Datei landet zusätzlich zu
 # Docspell (durchsuchbar/getaggt) unverändert in ./data/belege-nach-monat/
-# <Jahr>/<Monat>/ — ein echter, per File Station browsbarer Ordnerbaum für den
-# Steuerberater, sortiert nach bestmöglicher Datumsnäherung (Mail-Datum bei
-# Gmail, Datei-mtime bei Dropzone/Scans). Siehe connectors/common/monthly_mirror.py.
+# <Jahr>/<Eingang oder Ausgang>/<Monat>/ — ein echter, per File Station
+# browsbarer Ordnerbaum für den Steuerberater, sortiert nach bestmöglicher
+# Datumsnäherung (Mail-Datum bei Gmail, Datei-mtime bei Dropzone/Scans).
+# Siehe connectors/common/monthly_mirror.py.
 
 services:
   db:

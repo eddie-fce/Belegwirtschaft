@@ -3,6 +3,12 @@
 # mit denen der Treffer in Docspell abgelegt wird.
 #
 # Tipp: Regeln erst mit https://mail.google.com Suchfeld austesten, dann hier eintragen.
+#
+# Optionales Feld "kind": "Eingang" (Default, alle Regeln unten sind Einkäufe/
+# Lieferantenrechnungen) oder "Ausgang" (Rechnungen, die die Firma selbst an
+# Kunden stellt — z.B. falls eine eigene Kopie per Mail bei euch eingeht).
+# Steuert den Jahr/Eingang-oder-Ausgang/Monat-Ordnerbaum unter
+# ./data/belege-nach-monat, siehe README-Abschnitt "Nutzung im Alltag".
 
 rules:
   - name: amazon

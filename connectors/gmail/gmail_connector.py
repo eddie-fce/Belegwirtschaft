@@ -200,9 +200,13 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
                 log.debug("Konnte Mail-Datum nicht abrufen (Mail %s), nutze heute", msg_id)
                 mirror_date = datetime.now()
 
+            # Alle bisherigen Regeln sind Einkäufe/Lieferantenrechnungen — "Eingang".
+            # Für eine künftige Regel auf Ausgangsrechnungen (falls die Firma sich
+            # selbst Kopien per Mail zustellt) in sources.yaml "kind: Ausgang" setzen.
+            kind = rule.get("kind", "Eingang")
             meta = DocspellMeta(
                 correspondent=rule.get("correspondent"),
-                tags=rule.get("tags", []),
+                tags=[*rule.get("tags", []), kind],
                 folder=rule.get("folder"),
             )
             ok_count = 0
@@ -214,7 +218,7 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
                     upload_name = f"{stem}{suffix}.{ext}" if dot else f"{filename}{suffix}"
                 if client.upload(upload_name, content, meta):
                     ok_count += 1
-                    mirror_to_month_folder(MONTHLY_MIRROR_DIR, upload_name, content, when=mirror_date)
+                    mirror_to_month_folder(MONTHLY_MIRROR_DIR, upload_name, content, when=mirror_date, kind=kind)
 
             if ok_count == len(attachments):
                 store.mark_processed(

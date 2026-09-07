@@ -8,8 +8,16 @@ im Jahr heruntergeladene ZIP mit Rechnungen (siehe
 einfach hier entpacken statt fotografieren — der Connector unterscheidet
 nicht zwischen den Quellen, er lädt einfach jede neue Datei hoch.
 
+**Zwei Unterordner statt einem:**
+- `./data/dropzone/eingang/` — empfangene Belege (Einkäufe, Lieferantenrechnungen,
+  Amazon-Business-Export). Landet im Ordnerbaum unter `.../<Jahr>/Eingang/<Monat>/`.
+- `./data/dropzone/ausgang/` — Rechnungen, die die Firma selbst an ihre Kunden
+  stellt. Landet unter `.../<Jahr>/Ausgang/<Monat>/`.
+
+Je nachdem, was du reinlegst, in den passenden Unterordner einsortieren.
+
 Syncthing läuft als Teil dieses Docker-Compose-Stacks (Service `syncthing`)
-und synct direkt zwischen deinem Handy und `./data/dropzone` — keine
+und synct direkt zwischen deinem Handy und diesen Ordnern — keine
 Cloud-Zwischenstation, keine separate App-Center-Installation nötig.
 
 ## 1. Syncthing-Weboberfläche öffnen
@@ -30,8 +38,11 @@ Dann im Browser `http://localhost:8384` öffnen.
 2. In der NAS-Weboberfläche (aus Schritt 1): **"Gerät hinzufügen"** → die
    Geräte-ID vom Handy eintragen (steht in der Handy-App unter
    Einstellungen). Beide Seiten müssen sich gegenseitig akzeptieren.
-3. Auf der NAS-Seite den vorhandenen Ordner **"dropzone"** (zeigt auf
-   `./data/dropzone`) für das neu gekoppelte Handy freigeben.
+3. Auf der NAS-Seite den Ordner **"eingang"** (zeigt auf
+   `./data/dropzone/eingang`) für das neu gekoppelte Handy freigeben — für die
+   allermeisten (Belege, die ihr empfangen habt). Nur falls ihr auch
+   Ausgangsrechnungen vom Handy aus einspielen wollt, zusätzlich den Ordner
+   **"ausgang"** freigeben.
 4. Auf dem Handy: den freigegebenen Ordner annehmen, als lokalen Zielordner
    z.B. einen eigenen "Belege"-Ordner wählen.
 
@@ -45,19 +56,24 @@ erhöhen) verbessert die OCR-Erkennung in Docspell deutlich:
   [Genius Scan](https://play.google.com/store/apps/details?id=com.thegrizzlylabs.geniusscan.free) —
   Export-Ziel auf den Syncthing-Ordner stellen.
 
-Sobald die Datei im synchten Ordner landet, holt sie Syncthing automatisch
-nach `./data/dropzone` auf der NAS, und der Dropzone-Connector lädt sie von
-dort (Standard-Prüfintervall 60s) nach Docspell hoch.
+Sobald die Datei im synchten Ordner landet, holt sie Syncthing automatisch auf
+die NAS, und der Dropzone-Connector lädt sie von dort (Standard-Prüfintervall
+60s) nach Docspell hoch.
 
 ## Verhalten des Dropzone-Connectors
-- Neue Dateien werden alle `DROPZONE_POLL_INTERVAL_SECONDS` (Default 60s)
-  geprüft und nach Docspell hochgeladen, mit den Tags `Manuell`/`Unsortiert`
-  (in Docspells UI danach normal nachsortieren).
-- Nach erfolgreichem Upload wird die Datei nach `verarbeitet/` verschoben
-  (nicht gelöscht).
-- Bei fehlgeschlagenem Upload landet die Datei in `fehlgeschlagen/` — von dort
-  kannst du sie manuell in Docspells Web-UI hochladen oder das Problem
-  beheben und zurück in den Dropzone-Ordner legen.
+- Beide Unterordner (`eingang/`, `ausgang/`) werden unabhängig voneinander
+  alle `DROPZONE_POLL_INTERVAL_SECONDS` (Default 60s) geprüft.
+- Neue Dateien werden nach Docspell hochgeladen, mit den Tags
+  `Manuell`/`Unsortiert`/`Eingang` bzw. `.../Ausgang` (in Docspells UI danach
+  normal nachsortieren), und zusätzlich in den Jahr/Eingang-oder-Ausgang/Monat-
+  Ordnerbaum unter `./data/belege-nach-monat` gespiegelt.
+- Nach erfolgreichem Upload wird die Datei innerhalb ihres Unterordners nach
+  `verarbeitet/` verschoben (nicht gelöscht), z.B.
+  `./data/dropzone/eingang/verarbeitet/`.
+- Bei fehlgeschlagenem Upload landet die Datei in `fehlgeschlagen/` (ebenfalls
+  je Unterordner) — von dort kannst du sie manuell in Docspells Web-UI
+  hochladen oder das Problem beheben und zurück in den jeweiligen
+  Eingang-/Ausgang-Ordner legen.
 
 ## Ports, die vom Handy erreichbar sein müssen
 `22000/tcp+udp` (Sync-Protokoll) und `21027/udp` (lokale Geräte-Erkennung) —

@@ -98,8 +98,9 @@ Abgleich-Tool zu brauchen. Setup: [`connectors/gmail/README.md`](connectors/gmai
 Kein Connector-Code: Amazon Business hat einen eingebauten Sammel-Export
 ("Business Analytics" → Berichte → Bestellungen → Zeitraum wählen →
 Rechnungen als ZIP herunterladen, bis zu 2000 Dokumente pro Durchgang, bis zu
-5 Jahre rückwirkend). ZIP entpacken, PDFs in `./data/dropzone` legen — der
-**Dropzone-Connector** (s.u.) lädt sie automatisch nach Docspell hoch. Details
+5 Jahre rückwirkend). ZIP entpacken, PDFs in `./data/dropzone/eingang/` legen
+(Amazon-Einkäufe sind Eingangsrechnungen) — der **Dropzone-Connector** (s.u.)
+lädt sie automatisch nach Docspell hoch. Details
 und Begründung, warum hier bewusst nicht automatisiert wird:
 [`docs/amazon-business-export.md`](docs/amazon-business-export.md).
 
@@ -112,10 +113,11 @@ Rechnung manuell als PDF speichern und über die **Dropzone** (s.u.) oder
 direkt in Docspells Web-UI hochladen.
 
 ### Dropzone — manuelles Scannen per Handy
-Ein Ordner (`./data/dropzone`) wird beobachtet; jede neue Datei (Foto/Scan von
-Restaurant-/Park-/Tankbeleg) wird automatisch mit Tag `Manuell` nach Docspell
+Zwei Ordner werden beobachtet: `./data/dropzone/eingang/` (empfangene Belege)
+und `./data/dropzone/ausgang/` (selbst gestellte Kundenrechnungen). Jede neue
+Datei wird automatisch mit Tag `Manuell` + `Eingang`/`Ausgang` nach Docspell
 hochgeladen und danach in `verarbeitet/` verschoben. Die Synchronisation
-zwischen Handy und diesem Ordner übernimmt **Syncthing**, das als eigener
+zwischen Handy und diesen Ordnern übernimmt **Syncthing**, das als eigener
 Service in `docker-compose.yml` mitläuft (keine externe Installation nötig).
 Setup: [`connectors/dropzone/README.md`](connectors/dropzone/README.md).
 
@@ -133,11 +135,16 @@ Zwei Ablagen laufen parallel, mit unterschiedlichem Zweck:
    verwaltbar in der Web-UI, für Gmail-Regeln vorab in
    [`config/sources.yaml`](config/sources.yaml) festgelegt.
 
-2. **Echter Jahr/Monat-Ordnerbaum** (`./data/belege-nach-monat/<Jahr>/<Monat>/`)
-   — jede Datei, die Gmail- oder Dropzone-Connector hochladen, landet
-   zusätzlich unverändert hier. Sortiert nach der **bestmöglichen Näherung ans
-   echte Beleg-Datum, ohne auf Docspells (asynchrone) OCR zu warten**: beim
-   Gmail-Connector das Datum, an dem die Rechnungsmail einging; beim
+2. **Echter Ordnerbaum** unter `./data/belege-nach-monat/`, Struktur
+   `<Jahr>/<Eingang oder Ausgang>/<Monat>/datei.pdf` — jede Datei, die Gmail-
+   oder Dropzone-Connector hochladen, landet zusätzlich unverändert hier.
+   **Eingang** = empfangene Belege (Einkäufe/Lieferantenrechnungen — alle
+   bisherigen Gmail-Regeln und der Dropzone-Ordner `eingang/`), **Ausgang** =
+   Rechnungen, die die Firma selbst an ihre Kunden stellt (Dropzone-Ordner
+   `ausgang/`; für eine automatische Gmail-Quelle dafür in `sources.yaml` eine
+   Regel mit `kind: Ausgang` ergänzen). Sortiert nach der **bestmöglichen
+   Näherung ans echte Beleg-Datum, ohne auf Docspells (asynchrone) OCR zu
+   warten**: beim Gmail-Connector das Datum, an dem die Mail einging; beim
    Dropzone-Connector die Änderungszeit der Datei selbst (bei Handy-Fotos über
    Syncthing bleibt i.d.R. das Aufnahmedatum erhalten). Beides ist eine
    Näherung, kein Garant für das exakte Rechnungsdatum — falls ein Beleg im
@@ -173,10 +180,11 @@ Zwei Wege, je nach Situation:
    kannst du sofort Tags/Correspondent/Datum setzen. Am praktischsten, wenn
    du gerade am Rechner sitzt und das Dokument gleich richtig einsortieren
    willst.
-2. **In den Dropzone-Ordner legen** (`./data/dropzone`, z.B. per
-   Netzwerkfreigabe oder direkt auf der NAS): landet automatisch mit
-   `Manuell`/`Unsortiert` in Docspell, zum späteren Nachsortieren. Praktisch,
-   wenn du gerade nicht am Rechner bist oder mehrere Dateien auf einmal
+2. **In den passenden Dropzone-Unterordner legen** (`./data/dropzone/eingang/`
+   oder `./data/dropzone/ausgang/`, z.B. per Netzwerkfreigabe oder direkt auf
+   der NAS): landet automatisch mit `Manuell`/`Unsortiert` in Docspell, zum
+   späteren Nachsortieren. Praktisch, wenn du gerade nicht am Rechner bist
+   oder mehrere Dateien auf einmal
    loswerden willst, ohne bei jeder einzelnen die Web-UI zu bedienen. **Nur
    dieser Weg landet zusätzlich automatisch im Jahr/Monat-Ordnerbaum** (siehe
    oben) — für den durchgängigen Monatsordner-Anspruch also grundsätzlich
