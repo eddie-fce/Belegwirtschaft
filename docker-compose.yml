@@ -14,26 +14,57 @@
 # im Jahr lohnt sich weder eine Amazon-Entwickler-Registrierung noch eine gegen
 # Amazons UI geschriebene Browser-Automatisierung. Stattdessen: manueller
 # Business-Analytics-Bulk-Export -> Dropzone, siehe docs/amazon-business-export.md.
+#
+# Speicherlimits (mem_limit) unten sind für kleine NAS-Systeme (z.B. QNAP mit
+# ~4 GB RAM neben dem laufenden QTS/QuTS) bewusst knapp bemessen — siehe
+# docs/deploy-qnap.md für Hintergrund und Anpassung. Auf einem Server mit viel
+# RAM können diese Zeilen einfach entfernt werden.
+#
+# Jede von Gmail-/Dropzone-Connector hochgeladene Datei landet zusätzlich zu
+# Docspell (durchsuchbar/getaggt) unverändert in ./data/belege-nach-monat/
+# <Jahr>/<Eingang oder Ausgang>/<Monat>/ — ein echter, per File Station
+# browsbarer Ordnerbaum für den Steuerberater, sortiert nach bestmöglicher
+# Datumsnäherung (Mail-Datum bei Gmail, Datei-mtime bei Dropzone/Scans).
+# Siehe connectors/common/monthly_mirror.py.
 
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 256m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./data/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       - internal
 
   solr:
     image: solr:9
     restart: unless-stopped
+    mem_limit: 512m
+    # SOLR_HEAP begrenzt den JVM-Heap explizit (sonst nimmt sich Solr per Default
+    # einen Anteil des System-RAM statt des Container-Limits) — wichtig auf
+    # kleinen NAS-Systemen. Bei mehr verfügbarem RAM einfach erhöhen.
+    environment:
+      SOLR_HEAP: 384m
     command: ["solr-precreate", "docspell"]
     volumes:
       - ./data/solr:/var/solr
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8983/solr/admin/cores?action=STATUS || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - internal
 
@@ -45,9 +76,12 @@ services:
     # aktuell gewünschte Version prüfen und in .env eintragen.
     image: docspell/restserver:${DOCSPELL_VERSION}
     restart: unless-stopped
+    mem_limit: 384m
     depends_on:
-      - db
-      - solr
+      db:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
     environment:
       DOCSPELL_SERVER_BACKEND_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DOCSPELL_SERVER_BACKEND_JDBC_USER: ${POSTGRES_USER}
@@ -64,15 +98,30 @@ services:
       # Nur an localhost binden, nicht am gesamten Netzwerk — Zugriff per SSH-Tunnel
       # oder VPN, falls du von ausserhalb zugreifen willst.
       - "127.0.0.1:7880:7880"
+    healthcheck:
+      # Kein curl/wget vorausgesetzt — reiner TCP-Connect-Test per Bash, das in den
+      # Docspell-Images vorhanden sein sollte (sbt-native-packager-Basis). Falls nicht:
+      # Healthcheck entfernen, depends_on unten auf "service_started" zurückstellen.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/7880 && exec 3<&-"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
     networks:
       - internal
 
   docspell-joex:
     image: docspell/joex:${DOCSPELL_VERSION}
     restart: unless-stopped
+    # OCR/Textanalyse braucht mehr Headroom als restserver — bei häufigen
+    # Out-of-Memory-Abbrüchen (siehe docs/deploy-qnap.md) hier zuerst erhöhen,
+    # notfalls auf Kosten von solr/db.
+    mem_limit: 768m
     depends_on:
-      - db
-      - solr
+      db:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
     environment:
       DOCSPELL_JOEX_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DOCSPELL_JOEX_JDBC_USER: ${POSTGRES_USER}
@@ -89,8 +138,10 @@ services:
       context: .
       dockerfile: connectors/gmail/Dockerfile
     restart: unless-stopped
+    mem_limit: 128m
     depends_on:
-      - docspell-restserver
+      docspell-restserver:
+        condition: service_healthy
     environment:
       DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
       DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
@@ -104,6 +155,7 @@ services:
       - ./connectors/gmail/secrets:/secrets
       - ./config/sources.yaml:/config/sources.yaml:ro
       - ./data/state:/state
+      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
     networks:
       - internal
       - internet
@@ -113,8 +165,10 @@ services:
       context: .
       dockerfile: connectors/dropzone/Dockerfile
     restart: unless-stopped
+    mem_limit: 128m
     depends_on:
-      - docspell-restserver
+      docspell-restserver:
+        condition: service_healthy
     environment:
       DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
       DOCSPELL_COLLECTIVE: ${DOCSPELL_COLLECTIVE}
@@ -126,16 +180,66 @@ services:
     volumes:
       - ${DROPZONE_HOST_PATH}:/dropzone
       - ./data/state:/state
+      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
     networks:
       - internal
       # Nur für optionale ntfy-Alarme nötig — die eigentliche Dropzone-Funktion
       # (Ordner beobachten, zu Docspell hochladen) braucht kein Internet.
       - internet
 
+  # Syncthing für den Handy-Scanner: synct einen Ordner vom Handy direkt in
+  # ./data/dropzone, ohne Cloud-Zwischenstation. Web-UI zur Einrichtung (Geräte
+  # koppeln, Ordner freigeben) nur per SSH-Tunnel erreichbar, wie bei Docspell.
+  # Details: connectors/dropzone/README.md.
+  syncthing:
+    image: syncthing/syncthing:${SYNCTHING_VERSION}
+    restart: unless-stopped
+    mem_limit: 256m
+    hostname: belegwirtschaft-nas
+    environment:
+      PUID: 0
+      PGID: 0
+    volumes:
+      - ./data/syncthing:/var/syncthing
+      - ${DROPZONE_HOST_PATH}:/var/syncthing/dropzone
+    ports:
+      - "127.0.0.1:8384:8384"   # Web-UI, nur per SSH-Tunnel
+      - "22000:22000/tcp"        # Sync-Protokoll, muss vom Handy im LAN erreichbar sein
+      - "22000:22000/udp"
+      - "21027:21027/udp"        # Lokale Geräte-Erkennung im selben Netz
+    networks:
+      - internet
+
+  # Kein Dauer-Dienst, sondern ein On-Demand-Werkzeug: läuft nur, wenn ihr
+  # explizit einen Steuerberater-Export braucht (Python ist auf QNAP/QTS nicht
+  # selbstverständlich vorhanden, deshalb containerisiert statt "einfach lokal
+  # ausführen"). "profiles: tools" verhindert, dass es bei "docker compose up"
+  # automatisch mitstartet.
+  #
+  # Aufruf:
+  #   docker compose run --rm export-tax-advisor --year 2026 --out /data/export-2026.zip
+  # Landet danach unter ./data/export-2026.zip auf dem Host (per File Station
+  # abrufbar, wie alles andere unter ./data).
+  export-tax-advisor:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile
+    mem_limit: 128m
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_ACCOUNT: ${DOCSPELL_ACCOUNT}
+      DOCSPELL_PASSWORD: ${DOCSPELL_PASSWORD}
+    volumes:
+      - ./data:/data
+    networks:
+      - internal
+
 networks:
   # Docspell-Kern + DB + Solr reden nur miteinander, kein Internetzugriff nötig/erlaubt.
   internal:
     internal: true
-  # Nur die Connectors hängen zusätzlich hier dran (Gmail-API, optional ntfy).
+  # Nur die Connectors + Syncthing hängen zusätzlich hier dran (Gmail-API,
+  # Handy-Sync, optional ntfy).
   internet:
     driver: bridge

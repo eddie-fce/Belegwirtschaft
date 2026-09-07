@@ -7,6 +7,11 @@ archiviert. Alles läuft auf eigener Hardware — keine Cloud, keine
 Dritt-Dienste ausser der Quelle selbst (Gmail-API, optional ein selbst
 gehosteter ntfy-Server für Alarme).
 
+Läuft bei uns auf einer QNAP TS-435A (ARM, ~4 GB RAM) — siehe
+[`docs/deploy-qnap.md`](docs/deploy-qnap.md) für QNAP-spezifisches Setup und
+RAM-Tuning. Auf einem grosszügigeren Server/NAS reicht das normale Setup
+weiter unten ohne Anpassungen.
+
 ## Architektur
 
 ```
@@ -93,8 +98,9 @@ Abgleich-Tool zu brauchen. Setup: [`connectors/gmail/README.md`](connectors/gmai
 Kein Connector-Code: Amazon Business hat einen eingebauten Sammel-Export
 ("Business Analytics" → Berichte → Bestellungen → Zeitraum wählen →
 Rechnungen als ZIP herunterladen, bis zu 2000 Dokumente pro Durchgang, bis zu
-5 Jahre rückwirkend). ZIP entpacken, PDFs in `./data/dropzone` legen — der
-**Dropzone-Connector** (s.u.) lädt sie automatisch nach Docspell hoch. Details
+5 Jahre rückwirkend). ZIP entpacken, PDFs in `./data/dropzone/eingang/` legen
+(Amazon-Einkäufe sind Eingangsrechnungen) — der **Dropzone-Connector** (s.u.)
+lädt sie automatisch nach Docspell hoch. Details
 und Begründung, warum hier bewusst nicht automatisiert wird:
 [`docs/amazon-business-export.md`](docs/amazon-business-export.md).
 
@@ -107,10 +113,82 @@ Rechnung manuell als PDF speichern und über die **Dropzone** (s.u.) oder
 direkt in Docspells Web-UI hochladen.
 
 ### Dropzone — manuelles Scannen per Handy
-Ein Ordner (`./data/dropzone`, per Syncthing vom Handy synchronisiert)
-wird beobachtet; jede neue Datei (Foto von Restaurant-/Park-/Tankbeleg) wird
-automatisch mit Tag `Manuell` nach Docspell hochgeladen und danach in
-`verarbeitet/` verschoben. Setup: [`connectors/dropzone/README.md`](connectors/dropzone/README.md).
+Zwei Ordner werden beobachtet: `./data/dropzone/eingang/` (empfangene Belege)
+und `./data/dropzone/ausgang/` (selbst gestellte Kundenrechnungen). Jede neue
+Datei wird automatisch mit Tag `Manuell` + `Eingang`/`Ausgang` nach Docspell
+hochgeladen und danach in `verarbeitet/` verschoben. Die Synchronisation
+zwischen Handy und diesen Ordnern übernimmt **Syncthing**, das als eigener
+Service in `docker-compose.yml` mitläuft (keine externe Installation nötig).
+Setup: [`connectors/dropzone/README.md`](connectors/dropzone/README.md).
+
+## Nutzung im Alltag
+
+### Wie werden die Belege gespeichert — kann ich die Struktur selbst vorgeben?
+Zwei Ablagen laufen parallel, mit unterschiedlichem Zweck:
+
+1. **Docspell** (`./data/docspell-files`) — die durchsuchbare, getaggte
+   Ablage. Intern nach Datei-Hash organisiert, nicht nach Namen/Kategorie
+   durchsuchbar; **Docspell selbst ist die Oberfläche**, über die du suchst
+   und filterst, nicht das Dateisystem direkt. Die Struktur, die du hier
+   vorgibst, sind Docspells eigene Metadaten — Tags, Correspondents, Folders
+   (Docspells virtuelles Ordner-Konzept, kein echtes Verzeichnis) —, frei
+   verwaltbar in der Web-UI, für Gmail-Regeln vorab in
+   [`config/sources.yaml`](config/sources.yaml) festgelegt.
+
+2. **Echter Ordnerbaum** unter `./data/belege-nach-monat/`, Struktur
+   `<Jahr>/<Eingang oder Ausgang>/<Monat>/datei.pdf` — jede Datei, die Gmail-
+   oder Dropzone-Connector hochladen, landet zusätzlich unverändert hier.
+   **Eingang** = empfangene Belege (Einkäufe/Lieferantenrechnungen — alle
+   bisherigen Gmail-Regeln und der Dropzone-Ordner `eingang/`), **Ausgang** =
+   Rechnungen, die die Firma selbst an ihre Kunden stellt (Dropzone-Ordner
+   `ausgang/`; für eine automatische Gmail-Quelle dafür in `sources.yaml` eine
+   Regel mit `kind: Ausgang` ergänzen). Sortiert nach der **bestmöglichen
+   Näherung ans echte Beleg-Datum, ohne auf Docspells (asynchrone) OCR zu
+   warten**: beim Gmail-Connector das Datum, an dem die Mail einging; beim
+   Dropzone-Connector die Änderungszeit der Datei selbst (bei Handy-Fotos über
+   Syncthing bleibt i.d.R. das Aufnahmedatum erhalten). Beides ist eine
+   Näherung, kein Garant für das exakte Rechnungsdatum — falls ein Beleg im
+   falschen Monatsordner landet, lässt er sich dort einfach von Hand
+   verschieben (reines Dateisystem, keine Datenbank). Das ist die Struktur,
+   die dein Steuerberater direkt per Netzwerkfreigabe/File Station
+   durchsuchen kann, ganz ohne Docspell-Login. Umgesetzt in
+   [`connectors/common/monthly_mirror.py`](connectors/common/monthly_mirror.py).
+
+**Wichtig:** Diese Spiegelung läuft nur für Uploads über unsere Connectors
+(Gmail, Dropzone) — ein Dokument, das jemand direkt in Docspells eigener
+Web-UI hochlädt, geht daran vorbei (Docspell hat davon keine Kenntnis). Wer
+also will, dass wirklich jeder Beleg im Monatsordner landet: für Einzel-Uploads
+den [Dropzone-Ordner](#einzelne-dokumente-hochladen) nutzen, nicht Docspells
+UI direkt.
+
+Für eine einmalige ZIP-Zusammenfassung eines Zeitraums (z.B. um sie per Mail
+zu verschicken) gibt es zusätzlich den
+[Steuerberater-Export](#steuerberater-export) — der Jahr/Monat-Ordnerbaum
+oben ist aber die laufend aktuelle, direkt durchsuchbare Variante.
+
+### Scanner am Handy
+Siehe [Dropzone-Abschnitt](#dropzone--manuelles-scannen-per-handy) oben bzw.
+ausführlich [`connectors/dropzone/README.md`](connectors/dropzone/README.md):
+Syncthing (im Stack enthalten) mit dem Handy koppeln, eine Scan-App (z.B. die
+iOS-Notizen-App oder Genius Scan auf Android) auf den gekoppelten Ordner
+zeigen lassen — alles, was dort landet, wird automatisch hochgeladen.
+
+### Einzelne Dokumente hochladen
+Zwei Wege, je nach Situation:
+1. **Direkt in Docspells Web-UI** (`http://localhost:7880`, per SSH-Tunnel
+   erreichbar): Datei per Drag & Drop oder Dateiauswahl hochladen — dabei
+   kannst du sofort Tags/Correspondent/Datum setzen. Am praktischsten, wenn
+   du gerade am Rechner sitzt und das Dokument gleich richtig einsortieren
+   willst.
+2. **In den passenden Dropzone-Unterordner legen** (`./data/dropzone/eingang/`
+   oder `./data/dropzone/ausgang/`, z.B. per Netzwerkfreigabe oder direkt auf
+   der NAS): landet automatisch mit `Manuell`/`Unsortiert` in Docspell, zum
+   späteren Nachsortieren. Praktisch, wenn du gerade nicht am Rechner bist
+   oder mehrere Dateien auf einmal
+   loswerden willst, ohne bei jeder einzelnen die Web-UI zu bedienen. **Nur
+   dieser Weg landet zusätzlich automatisch im Jahr/Monat-Ordnerbaum** (siehe
+   oben) — für den durchgängigen Monatsordner-Anspruch also grundsätzlich
+   diesen Weg statt Docspells UI direkt nutzen.
 
 ## Betrieb & Ausfallsicherheit
 
@@ -134,11 +212,25 @@ nicht automatisch eingerichtet, damit nicht ungefragt in eure Systemd/Cron-
 Konfiguration eingegriffen wird.
 
 ### Steuerberater-Export
-`scripts/export_for_tax_advisor.py --from 2026-01-01 --to 2026-03-31 --out export.zip`
-packt alle als "Rechnung" getaggten Belege eines Zeitraums als ZIP mit
-Manifest-CSV. **Best-effort**: nutzt Docspells authentifizierte Such-/
-Download-API, die mangels Netzwerkzugriff auf docspell.org beim Bau dieses
-Repos nicht live verifiziert werden konnte (siehe Kommentare in
+Läuft als On-Demand-Tool im Stack (kein Dauer-Dienst, kein Python auf der
+NAS nötig — QNAP/QTS hat das nicht selbstverständlich vorinstalliert):
+```bash
+docker compose run --rm export-tax-advisor --year 2026 --out /data/export-2026.zip
+# oder ein beliebiger Zeitraum:
+docker compose run --rm export-tax-advisor --from 2026-01-01 --to 2026-03-31 --out /data/export-q1-2026.zip
+```
+Landet danach unter `./data/export-2026.zip` auf dem Host — von dort per File
+Station abrufbar wie alles andere unter `./data`, z.B. um es dem
+Steuerberater per Mail/Upload zu schicken.
+
+Packt alle als "Rechnung" getaggten Belege eines Zeitraums als ZIP —
+**innerhalb des ZIPs nach Jahr/Monat sortiert** (z.B. `2026/03/2026-03-15_...pdf`),
+plus eine `manifest.csv` mit derselben Jahr/Monat-Spalte. Genau die Struktur,
+die Steuerberater typischerweise für die Abgabe erwarten, ohne dass Docspell
+selbst echte Ordner braucht (siehe oben, "Wie werden die Belege gespeichert").
+**Best-effort**: nutzt Docspells authentifizierte Such-/Download-API, die
+mangels Netzwerkzugriff auf docspell.org beim Bau dieses Repos nicht live
+verifiziert werden konnte (siehe Kommentare in
 `connectors/common/docspell_query.py`) — ersten Testlauf mit kleinem Zeitraum
 machen, bevor es Teil eines wiederkehrenden Ablaufs wird. Braucht einen
 normalen Docspell-Login (`DOCSPELL_ACCOUNT`/`DOCSPELL_PASSWORD` in `.env`),

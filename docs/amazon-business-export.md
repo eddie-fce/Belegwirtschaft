@@ -15,7 +15,8 @@ Komplexität für etwas hinzufügen, das ohnehin nur selten anfällt.
 3. Bestellungen auswählen (oder alle) → **"Auftragsdokumente abrufen"** bzw.
    "Get order documents" → **Rechnungen** auswählen → herunterladen. Amazon
    liefert ein ZIP mit allen Rechnungs-PDFs.
-4. Das ZIP entpacken und die PDFs in `./data/dropzone` legen — der
+4. Das ZIP entpacken und die PDFs in `./data/dropzone/eingang/` legen (Amazon-
+   Einkäufe sind Eingangsrechnungen) — der
    [Dropzone-Connector](../connectors/dropzone/README.md) lädt sie
    automatisch mit Tag `Manuell` nach Docspell hoch. Docspell dedupliziert
    identische Dateien serverseitig per Hash, ein erneuter Export mit
