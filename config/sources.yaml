@@ -46,9 +46,13 @@ rules:
     tags: ["Rechnung", "Unsortiert"]
     folder: "Sonstige"
 
-# Anhänge, die ignoriert werden sollen (z.B. Signaturbilder, Logos)
+# Anhänge, die ignoriert werden sollen (z.B. Signaturbilder, Logos, eingebettete
+# Bilder ohne echten Dateinamen — beobachtet als literal "inline" oder "image001"
+# ohne Endung, z.B. bei Amazon/AliExpress/PayPal-Marketingmails)
 ignore_attachment_patterns:
   - "*.png"
   - "*.jpg"
   - "*.gif"
   - "logo*"
+  - "inline*"
+  - "image*"
