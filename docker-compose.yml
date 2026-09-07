@@ -123,6 +123,7 @@ services:
       start_period: 30s
     networks:
       - internal
+      - hostaccess
 
   docspell-joex:
     image: ghcr.io/docspell/joex:${DOCSPELL_VERSION}
@@ -261,4 +262,13 @@ networks:
   # Nur die Connectors + Syncthing hängen zusätzlich hier dran (Gmail-API,
   # Handy-Sync, optional ntfy).
   internet:
+    driver: bridge
+  # Nur für docspell-restserver zusätzlich zu "internal": ein "internal: true"-
+  # Netzwerk lässt Docker grundsätzlich keine Ports zum Host durchreichen (kein
+  # Docspell-spezifisches Problem, gilt für jeden Container, der ausschliesslich
+  # an einem internen Netzwerk hängt) — ohne dieses zweite, normale Bridge-Netz
+  # bliebe "127.0.0.1:7880:7880" unten wirkungslos, obwohl Docker die Bindung
+  # anstandslos entgegennimmt. db/solr/joex bleiben unberührt davon, da sie
+  # weiterhin nur an "internal" hängen.
+  hostaccess:
     driver: bridge
