@@ -14,7 +14,18 @@ nicht zwischen den Quellen, er lädt einfach jede neue Datei hoch.
 - `./data/dropzone/ausgang/` — Rechnungen, die die Firma selbst an ihre Kunden
   stellt. Landet unter `.../<Jahr>/Ausgang/<Monat>/`.
 
-Je nachdem, was du reinlegst, in den passenden Unterordner einsortieren.
+Je nachdem, was du reinlegst, in den passenden Unterordner einsortieren. Der
+Connector unterscheidet nicht nach Dateityp — auch eine CSV-Datei landet
+korrekt im Ordnerbaum (ohne OCR, da nicht nötig, siehe unten).
+
+**Ausgangsrechnungen aus der eigenen Software:** Die selbst gebaute
+Rechnungssoftware (GitHub + Vercel) kann Rechnungen bisher nur als CSV
+exportieren (reine Tabellenwerte, keine PDF-Dokumente) — das reicht dem
+Steuerberater aber aus. Export bleibt vorerst manuell: CSV exportieren, Datei
+in `./data/dropzone/ausgang/` legen, fertig. Eine Automatisierung (z.B. ein
+Vercel-Cron-Job, der die CSV automatisch dorthin liefert) wäre technisch
+möglich, würde aber Änderungen im anderen Repo brauchen — aktuell bewusst
+zurückgestellt.
 
 Syncthing läuft als Teil dieses Docker-Compose-Stacks (Service `syncthing`)
 und synct direkt zwischen deinem Handy und diesen Ordnern — keine
