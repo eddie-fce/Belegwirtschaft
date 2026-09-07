@@ -31,7 +31,16 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "common"))
+# Im Docker-Image liegt "common/" direkt neben dieser Datei (vom Dockerfile so
+# kopiert); in einem rohen Git-Checkout (z.B. für den lokalen --login-Schritt)
+# liegt es stattdessen eine Ebene höher unter connectors/common. Beide Fälle
+# abdecken, damit --login ohne manuelles Kopieren funktioniert.
+_here = Path(__file__).resolve().parent
+for _candidate in (_here, _here.parent):
+    if (_candidate / "common").is_dir():
+        sys.path.insert(0, str(_candidate))
+        break
+
 from common.amount_extract import extract_amount  # noqa: E402
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
 from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
@@ -42,7 +51,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("gmail-connector")
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-SECRETS_DIR = Path("/secrets")
+# /secrets ist der Pfad im Docker-Container (per Volume gemountet, siehe
+# docker-compose.yml) — der existiert nur dort. Für den lokalen --login-Schritt
+# (ausserhalb von Docker, siehe README) auf den secrets/-Ordner neben diesem
+# Skript zurückfallen, genau dort, wohin die README-Anleitung credentials.json
+# legen lässt.
+SECRETS_DIR = Path("/secrets") if Path("/secrets").is_dir() else Path(__file__).resolve().parent / "secrets"
 STATE_DB = Path("/state/gmail.sqlite3")
 CONFIG_PATH = Path("/config/sources.yaml")
 MONTHLY_MIRROR_DIR = Path("/monthly")
