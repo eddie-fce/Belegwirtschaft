@@ -19,6 +19,12 @@
 # ~4 GB RAM neben dem laufenden QTS/QuTS) bewusst knapp bemessen — siehe
 # docs/deploy-qnap.md für Hintergrund und Anpassung. Auf einem Server mit viel
 # RAM können diese Zeilen einfach entfernt werden.
+#
+# Jede von Gmail-/Dropzone-Connector hochgeladene Datei landet zusätzlich zu
+# Docspell (durchsuchbar/getaggt) unverändert in ./data/belege-nach-monat/
+# <Jahr>/<Monat>/ — ein echter, per File Station browsbarer Ordnerbaum für den
+# Steuerberater, sortiert nach bestmöglicher Datumsnäherung (Mail-Datum bei
+# Gmail, Datei-mtime bei Dropzone/Scans). Siehe connectors/common/monthly_mirror.py.
 
 services:
   db:
@@ -148,6 +154,7 @@ services:
       - ./connectors/gmail/secrets:/secrets
       - ./config/sources.yaml:/config/sources.yaml:ro
       - ./data/state:/state
+      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
     networks:
       - internal
       - internet
@@ -172,6 +179,7 @@ services:
     volumes:
       - ${DROPZONE_HOST_PATH}:/dropzone
       - ./data/state:/state
+      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
     networks:
       - internal
       # Nur für optionale ntfy-Alarme nötig — die eigentliche Dropzone-Funktion

@@ -122,31 +122,42 @@ Setup: [`connectors/dropzone/README.md`](connectors/dropzone/README.md).
 ## Nutzung im Alltag
 
 ### Wie werden die Belege gespeichert — kann ich die Struktur selbst vorgeben?
-Wichtig zu verstehen: Die Dateien landen **nicht** in einem von dir lesbaren
-Ordnerbaum, sondern in Docspells eigenem Ablagesystem unter
-`./data/docspell-files` — dort intern nach Datei-Hash organisiert, nicht nach
-Namen/Kategorie durchsuchbar. Das ist normal für Dokumentenmanagement-Systeme:
-**Docspell selbst ist die Oberfläche**, über die du suchst und filterst, nicht
-das Dateisystem direkt.
+Zwei Ablagen laufen parallel, mit unterschiedlichem Zweck:
 
-Die Struktur, die du tatsächlich vorgibst und änderst, sind Docspells eigene
-Metadaten:
-- **Tags** (z.B. "Rechnung", "Online-Shopping") — frei definierbar in
-  Docspells Web-UI unter Verwaltung → Tags.
-- **Correspondents** (Absender/Firma, z.B. "Amazon", "PayPal") — ebenfalls
-  dort verwaltet.
-- **Folders** — Docspells eigenes, virtuelles Ordner-Konzept (kein echtes
-  Verzeichnis auf der Platte), ebenfalls frei anlegbar.
+1. **Docspell** (`./data/docspell-files`) — die durchsuchbare, getaggte
+   Ablage. Intern nach Datei-Hash organisiert, nicht nach Namen/Kategorie
+   durchsuchbar; **Docspell selbst ist die Oberfläche**, über die du suchst
+   und filterst, nicht das Dateisystem direkt. Die Struktur, die du hier
+   vorgibst, sind Docspells eigene Metadaten — Tags, Correspondents, Folders
+   (Docspells virtuelles Ordner-Konzept, kein echtes Verzeichnis) —, frei
+   verwaltbar in der Web-UI, für Gmail-Regeln vorab in
+   [`config/sources.yaml`](config/sources.yaml) festgelegt.
 
-Für automatisch eingehende Gmail-Belege legst du die Zuordnung vorab in
-[`config/sources.yaml`](config/sources.yaml) fest (Regel → Correspondent/Tags/Folder).
-Für alles andere (Dropzone-Uploads, manuelle Uploads) landen die Belege erst
-mit den Tags `Manuell`/`Unsortiert` in Docspell und du sortierst sie in der
-Web-UI nach — dort auch per Mehrfachauswahl ("Multi-Edit") mehrere Belege auf
-einmal taggen. Wer eine echte, exportierbare Ordnerstruktur braucht (z.B. für
-den Steuerberater ausserhalb von Docspell): dafür ist der
-[Steuerberater-Export](#steuerberater-export) gedacht, der getaggte Belege
-als ZIP mit Manifest herausschreibt.
+2. **Echter Jahr/Monat-Ordnerbaum** (`./data/belege-nach-monat/<Jahr>/<Monat>/`)
+   — jede Datei, die Gmail- oder Dropzone-Connector hochladen, landet
+   zusätzlich unverändert hier. Sortiert nach der **bestmöglichen Näherung ans
+   echte Beleg-Datum, ohne auf Docspells (asynchrone) OCR zu warten**: beim
+   Gmail-Connector das Datum, an dem die Rechnungsmail einging; beim
+   Dropzone-Connector die Änderungszeit der Datei selbst (bei Handy-Fotos über
+   Syncthing bleibt i.d.R. das Aufnahmedatum erhalten). Beides ist eine
+   Näherung, kein Garant für das exakte Rechnungsdatum — falls ein Beleg im
+   falschen Monatsordner landet, lässt er sich dort einfach von Hand
+   verschieben (reines Dateisystem, keine Datenbank). Das ist die Struktur,
+   die dein Steuerberater direkt per Netzwerkfreigabe/File Station
+   durchsuchen kann, ganz ohne Docspell-Login. Umgesetzt in
+   [`connectors/common/monthly_mirror.py`](connectors/common/monthly_mirror.py).
+
+**Wichtig:** Diese Spiegelung läuft nur für Uploads über unsere Connectors
+(Gmail, Dropzone) — ein Dokument, das jemand direkt in Docspells eigener
+Web-UI hochlädt, geht daran vorbei (Docspell hat davon keine Kenntnis). Wer
+also will, dass wirklich jeder Beleg im Monatsordner landet: für Einzel-Uploads
+den [Dropzone-Ordner](#einzelne-dokumente-hochladen) nutzen, nicht Docspells
+UI direkt.
+
+Für eine einmalige ZIP-Zusammenfassung eines Zeitraums (z.B. um sie per Mail
+zu verschicken) gibt es zusätzlich den
+[Steuerberater-Export](#steuerberater-export) — der Jahr/Monat-Ordnerbaum
+oben ist aber die laufend aktuelle, direkt durchsuchbare Variante.
 
 ### Scanner am Handy
 Siehe [Dropzone-Abschnitt](#dropzone--manuelles-scannen-per-handy) oben bzw.
@@ -166,7 +177,10 @@ Zwei Wege, je nach Situation:
    Netzwerkfreigabe oder direkt auf der NAS): landet automatisch mit
    `Manuell`/`Unsortiert` in Docspell, zum späteren Nachsortieren. Praktisch,
    wenn du gerade nicht am Rechner bist oder mehrere Dateien auf einmal
-   loswerden willst, ohne bei jeder einzelnen die Web-UI zu bedienen.
+   loswerden willst, ohne bei jeder einzelnen die Web-UI zu bedienen. **Nur
+   dieser Weg landet zusätzlich automatisch im Jahr/Monat-Ordnerbaum** (siehe
+   oben) — für den durchgängigen Monatsordner-Anspruch also grundsätzlich
+   diesen Weg statt Docspells UI direkt nutzen.
 
 ## Betrieb & Ausfallsicherheit
 

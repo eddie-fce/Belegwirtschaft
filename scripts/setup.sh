@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-mkdir -p data/db data/solr data/docspell-files data/state data/dropzone data/syncthing
+mkdir -p data/db data/solr data/docspell-files data/state data/dropzone data/syncthing data/belege-nach-monat
 mkdir -p connectors/gmail/secrets
 
 if [ ! -f .env ]; then

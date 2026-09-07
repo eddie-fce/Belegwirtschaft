@@ -20,10 +20,12 @@ import os
 import shutil
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "common"))
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
+from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
 from common.notify import notify  # noqa: E402
 from common.state import ProcessedStore  # noqa: E402
 
@@ -34,6 +36,7 @@ DROPZONE_DIR = Path("/dropzone")
 PROCESSED_DIR = DROPZONE_DIR / "verarbeitet"
 FAILED_DIR = DROPZONE_DIR / "fehlgeschlagen"
 STATE_DB = Path("/state/dropzone.sqlite3")
+MONTHLY_MIRROR_DIR = Path("/monthly")
 
 IGNORED_SUFFIXES = {".tmp", ".part", ".syncthing", ".crdownload"}
 
@@ -60,10 +63,18 @@ def run_once(store: ProcessedStore, client: DocspellClient) -> None:
         if store.is_processed("dropzone", file_hash):
             continue
 
+        # Datei-mtime statt "jetzt" fürs Einsortieren: bei Handy-Fotos, die per
+        # Syncthing synct werden, bleibt i.d.R. das Aufnahmedatum als mtime
+        # erhalten (Syncthing überträgt Zeitstempel mit) — deutlich näher am
+        # echten Beleg-Datum als der Zeitpunkt, an dem der Connector zufällig
+        # gerade den Ordner abläuft.
+        mirror_date = datetime.fromtimestamp(path.stat().st_mtime)
+
         content = path.read_bytes()
         meta = DocspellMeta(tags=["Manuell", "Unsortiert"], folder="Manuell")
         if client.upload(path.name, content, meta):
             store.mark_processed("dropzone", file_hash)
+            mirror_to_month_folder(MONTHLY_MIRROR_DIR, path.name, content, when=mirror_date)
             shutil.move(str(path), str(PROCESSED_DIR / path.name))
             log.info("Verarbeitet: %s", path.name)
         else:
