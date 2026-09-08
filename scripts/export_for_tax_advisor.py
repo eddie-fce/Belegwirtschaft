@@ -91,8 +91,17 @@ def main() -> None:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         manifest_lines = ["jahr/monat;item_id;name;correspondent;date;tags"]
         for r in results:
-            prefix = _year_month_prefix(r.date)
-            date_label = f"{r.date:%Y-%m-%d}" if r.date else "ohne-datum"
+            # r.date kommt aus der Suche und ist serverseitig
+            # coalesce(itemDate, created) - liefert also auch ohne von
+            # Docspell erkanntes Datum einen Wert. Das echte, nullable
+            # Datum gibt es nur über die Item-Detailsicht.
+            try:
+                real_date = client.get_item_date(r.item_id)
+            except Exception:
+                log.exception("Konnte echtes Datum für Item %s (%s) nicht laden", r.item_id, r.name)
+                real_date = None
+            prefix = _year_month_prefix(real_date)
+            date_label = f"{real_date:%Y-%m-%d}" if real_date else "ohne-datum"
             if not r.attachments:
                 log.warning("Item %s (%s) hat keine Attachments, übersprungen", r.item_id, r.name)
                 continue

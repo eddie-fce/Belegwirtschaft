@@ -13,6 +13,14 @@ per Connector hochgeladene — auch manuell in Docspells Oberfläche eingefügte
 Belege landen so automatisch im Ordnerbaum (das war vorher eine bekannte
 Lücke, siehe README-Abschnitt "Nutzung im Alltag").
 
+WICHTIG (live aufgefallen): das Datum aus der normalen Suche ist serverseitig
+coalesce(itemDate, created) — Items ganz ohne von Docspell erkanntes Datum
+liefern dort trotzdem einen Wert (das Upload-/Verarbeitungsdatum), nicht
+unterscheidbar von einem echten Treffer. Deshalb holt dieses Skript das
+tatsächliche, nullable Datum separat je Item über die Detailsicht
+(client.get_item_date, siehe docspell_query.py) statt sich auf das
+Suchergebnis zu verlassen.
+
 Verhalten je Sync-Lauf:
 - Attachment mit von Docspell erkanntem Datum -> Datei liegt/landet unter
   <Jahr>/<Eingang|Ausgang>/<Monat>/dateiname.
@@ -82,9 +90,21 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
 
     for item in results:
         kind = _kind(item.tags)
+        # WICHTIG: item.date aus der Suche ist serverseitig
+        # coalesce(itemDate, created) — liefert also auch dann einen Wert,
+        # wenn Docspell nie ein echtes Datum erkannt hat (dann eben das
+        # Upload-Datum, nicht unterscheidbar von einem echten Treffer). Das
+        # tatsächliche, nullable Datum gibt es nur über die Item-
+        # Detailsicht (siehe docspell_query.py).
+        try:
+            real_date = client.get_item_date(item.item_id)
+        except Exception:
+            log.exception("Konnte echtes Datum für Item %s (%s) nicht laden", item.item_id, item.name)
+            continue
+
         for att in item.attachments:
             seen_attachment_ids.add(att.id)
-            desired_path = _target_path(item.name, att.name, item.date, kind)
+            desired_path = _target_path(item.name, att.name, real_date, kind)
             previous_path_str = store.get_mirrored_path(att.id)
 
             if previous_path_str == str(desired_path) and desired_path.exists():
@@ -104,7 +124,7 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
                 continue
 
             mirror_to_month_folder(
-                MONTHLY_MIRROR_DIR, desired_path.name, content, when=item.date, kind=kind
+                MONTHLY_MIRROR_DIR, desired_path.name, content, when=real_date, kind=kind
             )
 
             if previous_path_str and previous_path_str != str(desired_path):

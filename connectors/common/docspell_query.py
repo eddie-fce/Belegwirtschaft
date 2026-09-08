@@ -15,6 +15,13 @@ frühere Version dieser Datei war an vier Stellen falsch, seitdem korrigiert
   ein Item kann mehrere Attachments haben.
 - Ohne den Query-Parameter "withDetails=true" liefert die Suche für jedes
   Item eine leere "attachments"-Liste zurück, selbst wenn welche existieren.
+- Das "date"-Feld der Suche/Listenansicht ist serverseitig
+  coalesce(itemDate, created) (siehe QItem.scala) — ein Item ganz ohne von
+  Docspell erkanntes Datum liefert dort trotzdem einen Wert (das Upload-/
+  Verarbeitungsdatum), nicht unterscheidbar von einem echten Treffer. Wer
+  das echte, tatsächlich nullable Datum braucht (z.B. für die Monatsordner-
+  Sortierung), muss get_item_date() nutzen (Item-Detailsicht,
+  GET /api/v1/sec/item/{id}, Feld "itemDate").
 """
 
 from __future__ import annotations
@@ -137,6 +144,23 @@ class DocspellQueryClient:
                 break
             offset += page_size
         return results
+
+    def get_item_date(self, item_id: str) -> datetime | None:
+        """Das ECHTE, von Docspell erkannte (oder in der Oberfläche manuell
+        gesetzte) Beleg-Datum — im Unterschied zum "date"-Feld der Such-/
+        Listenansicht (search()): das liefert serverseitig IMMER einen Wert
+        zurück, auch wenn nie eines erkannt wurde (Postgres-Query verwendet
+        coalesce(itemDate, created), siehe QItem.scala) — dann eben das
+        Upload-/Verarbeitungsdatum, von aussen nicht unterscheidbar von einem
+        echten Treffer. Die Item-Detailsicht dagegen liefert das rohe,
+        tatsächlich nullable "itemDate"-Feld. Für die Monatsordner-Sortierung
+        muss deshalb dieser Weg genutzt werden, nicht SearchResult.date."""
+        resp = self._get(f"/api/v1/sec/item/{item_id}", {})
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Item-Detail für {item_id} fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
+            )
+        return _parse_epoch_ms(resp.json().get("itemDate"))
 
     def download_original(self, attachment_id: str) -> bytes:
         resp = self.session.get(
