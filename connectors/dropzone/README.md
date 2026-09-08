@@ -49,12 +49,21 @@ Dann im Browser `http://localhost:8384` öffnen.
 2. In der NAS-Weboberfläche (aus Schritt 1): **"Gerät hinzufügen"** → die
    Geräte-ID vom Handy eintragen (steht in der Handy-App unter
    Einstellungen). Beide Seiten müssen sich gegenseitig akzeptieren.
-3. Auf der NAS-Seite den Ordner **"eingang"** (zeigt auf
-   `./data/dropzone/eingang`) für das neu gekoppelte Handy freigeben — für die
-   allermeisten (Belege, die ihr empfangen habt). Nur falls ihr auch
+3. Die Ordner **"eingang"** und **"ausgang"** existieren in Syncthing nicht
+   automatisch (nur ein "Default Folder" ist vorbelegt — den könnt ihr
+   löschen, er wird nicht gebraucht). Beide müssen einmalig manuell angelegt
+   werden, über **"Ordner hinzufügen"**:
+   - Ordner-Label: `eingang`, Ordnerpfad: `/var/syncthing/dropzone/eingang`
+   - Ordner-Label: `ausgang`, Ordnerpfad: `/var/syncthing/dropzone/ausgang`
+
+   (Die Pfade sind die Pfade *im Syncthing-Container*, siehe Volume-Mapping
+   in `docker-compose.yml` — nicht mit dem Host-Pfad `DROPZONE_HOST_PATH`
+   verwechseln.)
+4. Danach den Ordner **"eingang"** für das neu gekoppelte Handy freigeben —
+   für die allermeisten (Belege, die ihr empfangen habt). Nur falls ihr auch
    Ausgangsrechnungen vom Handy aus einspielen wollt, zusätzlich den Ordner
    **"ausgang"** freigeben.
-4. Auf dem Handy: den freigegebenen Ordner annehmen, als lokalen Zielordner
+5. Auf dem Handy: den freigegebenen Ordner annehmen, als lokalen Zielordner
    z.B. einen eigenen "Belege"-Ordner wählen.
 
 ## 3. Scan-App einrichten
