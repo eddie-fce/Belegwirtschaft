@@ -270,7 +270,13 @@ services:
       - ./data/syncthing:/var/syncthing
       - ${DROPZONE_HOST_PATH}:/var/syncthing/dropzone
     ports:
-      - "127.0.0.1:8384:8384"   # Web-UI, nur per SSH-Tunnel
+      # Gleicher Grund/gleiches Muster wie DOCSPELL_BIND_HOST: Web-UI ist per
+      # Default nur per SSH-Tunnel erreichbar. Falls SSH-Portforwarding auf dem
+      # NAS serverseitig deaktiviert ist, SYNCTHING_BIND_HOST in .env
+      # vorübergehend auf 0.0.0.0 stellen (dann per http://<NAS-LAN-IP>:8384
+      # erreichbar, um das Handy zu koppeln) und danach wieder auf 127.0.0.1
+      # zurückstellen.
+      - "${SYNCTHING_BIND_HOST:-127.0.0.1}:8384:8384"
       - "22000:22000/tcp"        # Sync-Protokoll, muss vom Handy im LAN erreichbar sein
       - "22000:22000/udp"
       - "21027:21027/udp"        # Lokale Geräte-Erkennung im selben Netz
