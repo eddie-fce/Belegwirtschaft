@@ -1,0 +1,6 @@
+{
+  "TCP": {
+    "7880": { "TCPForward": "docspell-restserver:7880" },
+    "8384": { "TCPForward": "syncthing:8384" }
+  }
+}
