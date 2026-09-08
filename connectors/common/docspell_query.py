@@ -4,7 +4,8 @@ Endpoint fürs Hochladen kennt.
 
 Gegen Docspells Scala-Quellcode verifiziert (github.com/docspell/docspell,
 Stand siehe ItemSearchPart.scala / AttachmentRoutes.scala / RItem.scala) —
-frühere Version dieser Datei war an drei Stellen falsch, seitdem korrigiert:
+frühere Version dieser Datei war an vier Stellen falsch, seitdem korrigiert
+(die letzte davon erst live gegen eine laufende Instanz aufgefallen):
 - Die Suche ist ein GET mit Query-String-Parametern (q/limit/offset), keine
   POST-Anfrage mit JSON-Body.
 - "date" kommt als Unix-Millisekunden-Zeitstempel (Integer, kann fehlen,
@@ -12,6 +13,8 @@ frühere Version dieser Datei war an drei Stellen falsch, seitdem korrigiert:
 - Der Original-Download läuft über die Attachment-ID
   (/api/v1/sec/attachment/{attachmentId}/original), NICHT über die Item-ID —
   ein Item kann mehrere Attachments haben.
+- Ohne den Query-Parameter "withDetails=true" liefert die Suche für jedes
+  Item eine leere "attachments"-Liste zurück, selbst wenn welche existieren.
 """
 
 from __future__ import annotations
@@ -101,7 +104,12 @@ class DocspellQueryClient:
         while True:
             resp = self._get(
                 "/api/v1/sec/item/search",
-                {"q": query, "limit": page_size, "offset": offset},
+                # withDetails=true ist nötig, damit Docspell die Attachment-
+                # Liste je Item überhaupt mitliefert — ohne das kommt
+                # "attachments": [] zurück, selbst wenn das Item welche hat
+                # (gegen Live-Instanz verifiziert: ItemSearchPart.scala,
+                # OSearch.searchSelect(details, ...)).
+                {"q": query, "limit": page_size, "offset": offset, "withDetails": "true"},
             )
             if resp.status_code != 200:
                 raise RuntimeError(
