@@ -231,7 +231,6 @@ services:
       - ./connectors/gmail/secrets:/secrets
       - ./config/sources.yaml:/config/sources.yaml:ro
       - ./data/state:/state
-      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
     networks:
       - internal
       - internet
@@ -256,11 +255,43 @@ services:
     volumes:
       - ${DROPZONE_HOST_PATH}:/dropzone
       - ./data/state:/state
-      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
     networks:
       - internal
       # Nur für optionale ntfy-Alarme nötig — die eigentliche Dropzone-Funktion
       # (Ordner beobachten, zu Docspell hochladen) braucht kein Internet.
+      - internet
+
+  # Baut den Jahr/Monat-Ordnerbaum für den Steuerberater (./data/belege-nach-
+  # monat) NICHT aus einer Näherung beim Upload, sondern periodisch aus
+  # Docspells eigenem, von der OCR erkannten (oder manuell korrigierten)
+  # Beleg-Datum — erfasst dabei auch Dokumente, die jemand direkt in
+  # Docspells Web-UI hochlädt. Braucht dafür einen normalen Docspell-Login
+  # (DOCSPELL_ACCOUNT/DOCSPELL_PASSWORD, gleiche Variablen wie beim
+  # Steuerberater-Export), keinen Integration-Endpoint. Details:
+  # connectors/mirror-sync/mirror_sync.py.
+  connector-mirror-sync:
+    build:
+      context: .
+      dockerfile: connectors/mirror-sync/Dockerfile
+    restart: unless-stopped
+    mem_limit: 128m
+    depends_on:
+      docspell-restserver:
+        condition: service_healthy
+    environment:
+      DOCSPELL_BASE_URL: ${DOCSPELL_BASE_URL}
+      DOCSPELL_ACCOUNT: ${DOCSPELL_ACCOUNT}
+      DOCSPELL_PASSWORD: ${DOCSPELL_PASSWORD}
+      MIRROR_SYNC_POLL_INTERVAL_SECONDS: ${MIRROR_SYNC_POLL_INTERVAL_SECONDS}
+      MIRROR_SYNC_ALERT_AFTER_FAILURES: ${MIRROR_SYNC_ALERT_AFTER_FAILURES}
+      NTFY_URL: ${NTFY_URL}
+      NTFY_TOPIC: ${NTFY_TOPIC}
+    volumes:
+      - ./data/state:/state
+      - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
+    networks:
+      - internal
+      # Nur für optionale ntfy-Alarme nötig.
       - internet
 
   # Syncthing für den Handy-Scanner: synct einen Ordner vom Handy direkt in

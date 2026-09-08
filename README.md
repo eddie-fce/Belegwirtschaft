@@ -136,30 +136,23 @@ Zwei Ablagen laufen parallel, mit unterschiedlichem Zweck:
    [`config/sources.yaml`](config/sources.yaml) festgelegt.
 
 2. **Echter Ordnerbaum** unter `./data/belege-nach-monat/`, Struktur
-   `<Jahr>/<Eingang oder Ausgang>/<Monat>/datei.pdf` — jede Datei, die Gmail-
-   oder Dropzone-Connector hochladen, landet zusätzlich unverändert hier.
-   **Eingang** = empfangene Belege (Einkäufe/Lieferantenrechnungen — alle
-   bisherigen Gmail-Regeln und der Dropzone-Ordner `eingang/`), **Ausgang** =
-   Rechnungen, die die Firma selbst an ihre Kunden stellt (Dropzone-Ordner
-   `ausgang/`; für eine automatische Gmail-Quelle dafür in `sources.yaml` eine
-   Regel mit `kind: Ausgang` ergänzen). Sortiert nach der **bestmöglichen
-   Näherung ans echte Beleg-Datum, ohne auf Docspells (asynchrone) OCR zu
-   warten**: beim Gmail-Connector das Datum, an dem die Mail einging; beim
-   Dropzone-Connector die Änderungszeit der Datei selbst (bei Handy-Fotos über
-   Syncthing bleibt i.d.R. das Aufnahmedatum erhalten). Beides ist eine
-   Näherung, kein Garant für das exakte Rechnungsdatum — falls ein Beleg im
-   falschen Monatsordner landet, lässt er sich dort einfach von Hand
-   verschieben (reines Dateisystem, keine Datenbank). Das ist die Struktur,
-   die dein Steuerberater direkt per Netzwerkfreigabe/File Station
-   durchsuchen kann, ganz ohne Docspell-Login. Umgesetzt in
-   [`connectors/common/monthly_mirror.py`](connectors/common/monthly_mirror.py).
-
-**Wichtig:** Diese Spiegelung läuft nur für Uploads über unsere Connectors
-(Gmail, Dropzone) — ein Dokument, das jemand direkt in Docspells eigener
-Web-UI hochlädt, geht daran vorbei (Docspell hat davon keine Kenntnis). Wer
-also will, dass wirklich jeder Beleg im Monatsordner landet: für Einzel-Uploads
-den [Dropzone-Ordner](#einzelne-dokumente-hochladen) nutzen, nicht Docspells
-UI direkt.
+   `<Jahr>/<Eingang oder Ausgang>/<Monat>/datei.pdf`. **Eingang** = empfangene
+   Belege (Einkäufe/Lieferantenrechnungen), **Ausgang** = Rechnungen, die die
+   Firma selbst an ihre Kunden stellt (gesteuert über die `Eingang`/`Ausgang`-
+   Tags, die Gmail-Regeln und Dropzone-Ordner ohnehin schon setzen). Gepflegt
+   vom periodisch laufenden `connector-mirror-sync`
+   ([`connectors/mirror-sync/mirror_sync.py`](connectors/mirror-sync/mirror_sync.py)),
+   der **direkt aus Docspells eigenem, von der OCR erkannten Beleg-Datum**
+   sortiert — nicht aus einer Näherung beim Upload. Dadurch landet ein Beleg
+   automatisch an der richtigen Stelle, auch wenn Docspell das Datum erst
+   nach dem Hochladen erkennt oder du es später in der Oberfläche korrigierst
+   (der nächste Sync-Lauf verschiebt die Datei dann nach). Items, für die
+   (noch) kein Datum erkannt wurde, landen sichtbar unter
+   `ohne-datum/<Eingang oder Ausgang>/`, statt geraten zu werden. Das ist die
+   Struktur, die dein Steuerberater direkt per Netzwerkfreigabe/File Station
+   durchsuchen kann, ganz ohne Docspell-Login — und zwar für **alle** Items
+   der Collective, auch die direkt in Docspells Web-UI hochgeladenen (der
+   Sync liest aus Docspell, nicht aus dem Upload-Weg).
 
 Für eine einmalige ZIP-Zusammenfassung eines Zeitraums (z.B. um sie per Mail
 zu verschicken) gibt es zusätzlich den
@@ -184,11 +177,12 @@ Zwei Wege, je nach Situation:
    oder `./data/dropzone/ausgang/`, z.B. per Netzwerkfreigabe oder direkt auf
    der NAS): landet automatisch mit `Manuell`/`Unsortiert` in Docspell, zum
    späteren Nachsortieren. Praktisch, wenn du gerade nicht am Rechner bist
-   oder mehrere Dateien auf einmal
-   loswerden willst, ohne bei jeder einzelnen die Web-UI zu bedienen. **Nur
-   dieser Weg landet zusätzlich automatisch im Jahr/Monat-Ordnerbaum** (siehe
-   oben) — für den durchgängigen Monatsordner-Anspruch also grundsätzlich
-   diesen Weg statt Docspells UI direkt nutzen.
+   oder mehrere Dateien auf einmal loswerden willst, ohne bei jeder einzelnen
+   die Web-UI zu bedienen.
+
+Beide Wege landen gleichermaßen im Jahr/Monat-Ordnerbaum (siehe oben) — der
+Sync liest aus Docspell selbst, unabhängig davon, wie ein Dokument dort
+hineingekommen ist.
 
 ## Betrieb & Ausfallsicherheit
 

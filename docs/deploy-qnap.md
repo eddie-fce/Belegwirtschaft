@@ -54,11 +54,11 @@ bewusst knappe `mem_limit`-Werte gesetzt:
 | solr (Volltextsuche)    | 512 MB | `SOLR_HEAP=384m` begrenzt den JVM-Heap explizit |
 | docspell-restserver     | 384 MB | Web-UI/API, moderat |
 | docspell-joex           | 768 MB | OCR/Textanalyse — braucht am meisten Headroom |
-| connector-gmail/-dropzone | 128 MB je | Schlanke Python-Skripte |
+| connector-gmail/-dropzone/-mirror-sync | 128 MB je | Schlanke Python-Skripte |
 | syncthing               | 256 MB | Handy-Sync für den Dropzone-Ordner |
 | tailscale               | 128 MB | Fernzugriff, siehe [docs/tailscale-remote-access.md](tailscale-remote-access.md) |
 
-Summe: ~2,48 GB — lässt der NAS noch etwas Luft für QTS selbst.
+Summe: ~2,61 GB — lässt der NAS noch etwas Luft für QTS selbst.
 
 **Das sind Startwerte, keine Garantie.** Beobachten mit:
 ```bash

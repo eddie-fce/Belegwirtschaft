@@ -22,7 +22,6 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -43,7 +42,6 @@ for _candidate in (_here, _here.parent):
 
 from common.amount_extract import extract_amount  # noqa: E402
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
-from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
 from common.notify import notify  # noqa: E402
 from common.state import ProcessedStore  # noqa: E402
 
@@ -59,7 +57,6 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 SECRETS_DIR = Path("/secrets") if Path("/secrets").is_dir() else Path(__file__).resolve().parent / "secrets"
 STATE_DB = Path("/state/gmail.sqlite3")
 CONFIG_PATH = Path("/config/sources.yaml")
-MONTHLY_MIRROR_DIR = Path("/monthly")
 
 
 def load_rules() -> tuple[list[dict], list[str], list[str]]:
@@ -154,21 +151,6 @@ def _walk_parts(payload: dict) -> list[dict]:
     return out
 
 
-def fetch_message_date(service, msg_id: str) -> datetime | None:
-    """Datum, an dem die Mail bei Gmail einging — als Näherung fürs Beleg-/
-    Kaufdatum für die Monatsordner-Einsortierung. Deutlich näher dran als das
-    Verarbeitungsdatum (bei dem ein später nachgeholter Poll-Lauf sonst alles
-    in den falschen Monat sortieren würde), auch wenn es nicht exakt das
-    Rechnungsdatum selbst ist. Docspells OCR bleibt die massgebliche,
-    korrigierbare Quelle innerhalb von Docspell selbst — dieser Wert steuert
-    nur den Dateisystem-Spiegel."""
-    msg = service.users().messages().get(userId="me", id=msg_id, format="minimal").execute()
-    internal_date_ms = msg.get("internalDate")
-    if not internal_date_ms:
-        return None
-    return datetime.fromtimestamp(int(internal_date_ms) / 1000)
-
-
 def fetch_email_text(service, msg_id: str) -> str:
     """Holt den Klartext-Body einer Mail (für die Betrag-Extraktion). Best-effort:
     bevorzugt text/plain, sonst text/html roh (Regex verträgt die paar HTML-Tags
@@ -223,12 +205,6 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
             except Exception:
                 log.debug("Konnte Betrag aus Mailtext nicht extrahieren (Mail %s)", msg_id)
 
-            try:
-                mirror_date = fetch_message_date(service, msg_id) or datetime.now()
-            except Exception:
-                log.debug("Konnte Mail-Datum nicht abrufen (Mail %s), nutze heute", msg_id)
-                mirror_date = datetime.now()
-
             # Alle bisherigen Regeln sind Einkäufe/Lieferantenrechnungen — "Eingang".
             # Für eine künftige Regel auf Ausgangsrechnungen (falls die Firma sich
             # selbst Kopien per Mail zustellt) in sources.yaml "kind: Ausgang" setzen.
@@ -247,7 +223,6 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
                     upload_name = f"{stem}{suffix}.{ext}" if dot else f"{filename}{suffix}"
                 if client.upload(upload_name, content, meta):
                     ok_count += 1
-                    mirror_to_month_folder(MONTHLY_MIRROR_DIR, upload_name, content, when=mirror_date, kind=kind)
 
             if ok_count == len(attachments):
                 store.mark_processed(

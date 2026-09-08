@@ -2,16 +2,16 @@
 Item-Details) — im Gegensatz zu docspell_client.py, der nur den Integration-
 Endpoint fürs Hochladen kennt.
 
-ACHTUNG — Best-Effort / ungetestet gegen Live-Docspell:
-Der Netzwerkzugriff auf docspell.org war beim Erstellen dieses Codes technisch
-blockiert (siehe README), daher basiert die Session-Login-/Such-API unten auf
-dem allgemein bekannten Docspell-REST-Schema (Login gegen
-/api/v1/open/auth/login, danach Requests mit dem zurückgegebenen Auth-Token),
-ist aber NICHT gegen eine laufende Docspell-Instanz verifiziert. Vor
-produktivem Einsatz bitte gegen die aktuelle API-Referenz
-(https://docspell.org/openapi/) prüfen und die mit "ADJUST" markierten Stellen
-bei Bedarf anpassen. Nutzung ist bewusst defensiv (klare Fehlermeldungen statt
-stillem Falsch-Verhalten), damit ein API-Mismatch schnell auffällt.
+Gegen Docspells Scala-Quellcode verifiziert (github.com/docspell/docspell,
+Stand siehe ItemSearchPart.scala / AttachmentRoutes.scala / RItem.scala) —
+frühere Version dieser Datei war an drei Stellen falsch, seitdem korrigiert:
+- Die Suche ist ein GET mit Query-String-Parametern (q/limit/offset), keine
+  POST-Anfrage mit JSON-Body.
+- "date" kommt als Unix-Millisekunden-Zeitstempel (Integer, kann fehlen,
+  wenn Docspell noch kein Datum erkannt hat), nicht als ISO-Datumsstring.
+- Der Original-Download läuft über die Attachment-ID
+  (/api/v1/sec/attachment/{attachmentId}/original), NICHT über die Item-ID —
+  ein Item kann mehrere Attachments haben.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+from datetime import datetime, timezone
 
 import requests
 
@@ -30,12 +31,19 @@ class DocspellAuthError(RuntimeError):
 
 
 @dataclasses.dataclass
+class Attachment:
+    id: str
+    name: str | None
+
+
+@dataclasses.dataclass
 class SearchResult:
     item_id: str
     name: str
     correspondent: str | None
-    date: str | None
+    date: datetime | None
     tags: list[str]
+    attachments: list[Attachment]
 
 
 class DocspellQueryClient:
@@ -52,7 +60,6 @@ class DocspellQueryClient:
         self.session = requests.Session()
 
     def _login(self) -> str:
-        # ADJUST: Pfad/Feldnamen gegen https://docspell.org/openapi/ prüfen.
         resp = self.session.post(
             f"{self.base_url}/api/v1/open/auth/login",
             json={"account": self.account, "password": self.password},
@@ -63,65 +70,83 @@ class DocspellQueryClient:
                 f"Docspell-Login fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
             )
         data = resp.json()
-        token = data.get("token")
-        if not token:
-            raise DocspellAuthError(f"Login-Antwort enthielt kein Token: {data}")
-        self._token = token
-        return token
+        if not data.get("success") or not data.get("token"):
+            raise DocspellAuthError(f"Docspell-Login abgelehnt: {data.get('message', data)}")
+        self._token = data["token"]
+        return self._token
 
     def _headers(self) -> dict:
         if not self._token:
             self._login()
-        # ADJUST: Header-Name gegen aktuelle Docspell-Version prüfen (in älteren
-        # Versionen "X-Docspell-Auth").
         return {"X-Docspell-Auth": self._token}
 
-    def search(self, query: str, limit: int = 200) -> list[SearchResult]:
-        """query ist Docspells eigene Such-DSL, z.B. 'tag:Rechnung date>=2026-01-01'."""
-        resp = self.session.post(
-            f"{self.base_url}/api/v1/sec/item/search",
-            headers=self._headers(),
-            json={"query": query, "limit": limit},
-            timeout=60,
+    def _get(self, path: str, params: dict) -> requests.Response:
+        resp = self.session.get(
+            f"{self.base_url}{path}", headers=self._headers(), params=params, timeout=60
         )
         if resp.status_code == 401:
+            # Token abgelaufen — einmal neu einloggen und erneut versuchen.
             self._token = None
-            resp = self.session.post(
-                f"{self.base_url}/api/v1/sec/item/search",
-                headers=self._headers(),
-                json={"query": query, "limit": limit},
-                timeout=60,
+            resp = self.session.get(
+                f"{self.base_url}{path}", headers=self._headers(), params=params, timeout=60
             )
-        if resp.status_code != 200:
-            raise RuntimeError(f"Docspell-Suche fehlgeschlagen ({resp.status_code}): {resp.text[:300]}")
+        return resp
 
-        items = resp.json().get("groups", [])
-        results = []
-        for group in items:
-            for item in group.get("items", []):
-                results.append(
-                    SearchResult(
-                        item_id=item["id"],
-                        name=item.get("name", ""),
-                        correspondent=(item.get("corrOrg") or {}).get("name"),
-                        date=item.get("date"),
-                        tags=[t.get("name") for t in item.get("tags", [])],
-                    )
+    def search(self, query: str, page_size: int = 200) -> list[SearchResult]:
+        """query ist Docspells eigene Such-DSL, leerer String = alle (nicht im
+        Papierkorb befindlichen) Items der Collective. Paginiert automatisch
+        über alle Treffer, unabhängig davon, wie viele es sind."""
+        results: list[SearchResult] = []
+        offset = 0
+        while True:
+            resp = self._get(
+                "/api/v1/sec/item/search",
+                {"q": query, "limit": page_size, "offset": offset},
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"Docspell-Suche fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
                 )
+            body = resp.json()
+            page_items: list[SearchResult] = []
+            for group in body.get("groups", []):
+                for item in group.get("items", []):
+                    page_items.append(
+                        SearchResult(
+                            item_id=item["id"],
+                            name=item.get("name", ""),
+                            correspondent=(item.get("corrOrg") or {}).get("name"),
+                            date=_parse_epoch_ms(item.get("date")),
+                            tags=[t.get("name") for t in item.get("tags", [])],
+                            attachments=[
+                                Attachment(id=a["id"], name=a.get("name"))
+                                for a in item.get("attachments", [])
+                            ],
+                        )
+                    )
+            results.extend(page_items)
+            if len(page_items) < page_size:
+                break
+            offset += page_size
         return results
 
-    def download_original(self, item_id: str) -> bytes:
-        # ADJUST: Attachment-Enumeration ausgelassen — nimmt hier vereinfachend an,
-        # dass genau ein Original-Attachment pro Item existiert (Normalfall für per
-        # Connector hochgeladene Einzel-PDFs). Bei Multi-Attachment-Items ggf.
-        # zuerst /api/v1/sec/item/{id} abfragen und über die Attachment-IDs iterieren.
+    def download_original(self, attachment_id: str) -> bytes:
         resp = self.session.get(
-            f"{self.base_url}/api/v1/sec/attachment/{item_id}/original",
+            f"{self.base_url}/api/v1/sec/attachment/{attachment_id}/original",
             headers=self._headers(),
             timeout=60,
         )
         if resp.status_code != 200:
             raise RuntimeError(
-                f"Download für Item {item_id} fehlgeschlagen ({resp.status_code})"
+                f"Download für Attachment {attachment_id} fehlgeschlagen ({resp.status_code})"
             )
         return resp.content
+
+
+def _parse_epoch_ms(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
+    except (TypeError, ValueError):
+        return None

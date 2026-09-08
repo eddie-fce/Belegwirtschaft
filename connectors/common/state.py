@@ -40,6 +40,16 @@ class ProcessedStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mirrored_attachments (
+                    attachment_id TEXT PRIMARY KEY,
+                    item_id TEXT NOT NULL,
+                    mirrored_path TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
 
     @contextmanager
     def _conn(self):
@@ -128,3 +138,40 @@ class ProcessedStore:
                 )
                 return True
         return False
+
+    # --- Mirror-Sync: welche Docspell-Attachments liegen aktuell wo im
+    # Jahr/Monat-Ordnerbaum? Ermöglicht, eine Datei zu verschieben statt zu
+    # duplizieren, wenn sich das erkannte Beleg-Datum ändert, und verwaiste
+    # Kopien zu entfernen, wenn ein Item in Docspell gelöscht wird.
+
+    def get_mirrored_path(self, attachment_id: str) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT mirrored_path FROM mirrored_attachments WHERE attachment_id = ?",
+                (attachment_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    def set_mirrored_path(self, attachment_id: str, item_id: str, path: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO mirrored_attachments (attachment_id, item_id, mirrored_path, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(attachment_id) DO UPDATE SET
+                    mirrored_path = excluded.mirrored_path,
+                    updated_at = datetime('now')
+                """,
+                (attachment_id, item_id, path),
+            )
+
+    def all_mirrored_attachment_ids(self) -> set[str]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT attachment_id FROM mirrored_attachments").fetchall()
+        return {r[0] for r in rows}
+
+    def remove_mirrored(self, attachment_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM mirrored_attachments WHERE attachment_id = ?", (attachment_id,)
+            )

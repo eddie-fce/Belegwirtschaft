@@ -85,8 +85,15 @@ die NAS, und der Dropzone-Connector lädt sie von dort (Standard-Prüfintervall
   alle `DROPZONE_POLL_INTERVAL_SECONDS` (Default 60s) geprüft.
 - Neue Dateien werden nach Docspell hochgeladen, mit den Tags
   `Manuell`/`Unsortiert`/`Eingang` bzw. `.../Ausgang` (in Docspells UI danach
-  normal nachsortieren), und zusätzlich in den Jahr/Eingang-oder-Ausgang/Monat-
-  Ordnerbaum unter `./data/belege-nach-monat` gespiegelt.
+  normal nachsortieren). Die Einsortierung in den Jahr/Eingang-oder-Ausgang/
+  Monat-Ordnerbaum unter `./data/belege-nach-monat` übernimmt separat der
+  periodisch laufende `connector-mirror-sync` (Standard-Intervall 30 Min.,
+  `MIRROR_SYNC_POLL_INTERVAL_SECONDS` in `.env`) — nach dem tatsächlich von
+  Docspell erkannten Beleg-Datum, nicht nach der Datei-mtime. Findet Docspell
+  (noch) kein Datum (z.B. bei einer CSV-Ausgangsrechnung ohne erkennbares
+  Datumsformat), landet die Datei zunächst unter `ohne-datum/<Eingang oder
+  Ausgang>/` — sobald du das Datum in Docspells Oberfläche einträgst,
+  verschiebt der nächste Sync-Lauf sie automatisch an die richtige Stelle.
 - Nach erfolgreichem Upload wird die Datei innerhalb ihres Unterordners nach
   `verarbeitet/` verschoben (nicht gelöscht), z.B.
   `./data/dropzone/eingang/verarbeitet/`.

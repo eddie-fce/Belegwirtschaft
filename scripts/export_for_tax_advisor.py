@@ -4,12 +4,10 @@ sortiert nach Jahr/Monat (z.B. "2026/03/2026-03-15_...pdf") — genau die
 Struktur, die ein Steuerberater i.d.R. erwartet, ohne dass Docspell selbst
 echte Ordner kennt (siehe README-Abschnitt "Nutzung im Alltag").
 
-BEST-EFFORT / vor Nutzung prüfen: nutzt Docspells authentifizierte Such- und
-Download-API über connectors/common/docspell_query.py, die mangels Netzwerk-
-zugriff auf docspell.org beim Erstellen dieses Skripts nicht live gegen eine
-laufende Docspell-Instanz getestet werden konnte (siehe Kommentare dort).
-Erster Testlauf daher am besten mit einem kleinen Zeitraum, um das Ergebnis
-zu prüfen, bevor es Teil eines wiederkehrenden Ablaufs wird.
+Nutzt Docspells authentifizierte Such- und Download-API über
+connectors/common/docspell_query.py — gegen Docspells Quellcode verifiziert
+(siehe Kommentare dort für Details, u.a. Datumsformat und Attachment- statt
+Item-ID beim Download).
 
 Nutzung (empfohlen: containerisiert über docker-compose, kein lokales Python
 nötig — siehe Service "export-tax-advisor" in docker-compose.yml):
@@ -30,6 +28,7 @@ import logging
 import os
 import sys
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "connectors" / "common"))
@@ -50,18 +49,13 @@ def load_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-def _year_month_prefix(date_str: str | None) -> str:
-    """Baut 'JJJJ/MM' aus einem Docspell-Datum. Docspell liefert Daten laut
-    öffentlich bekanntem Schema als ISO-String (z.B. '2026-03-15' oder mit
-    Zeitanteil '2026-03-15T00:00:00Z') — nicht live gegen die API verifiziert,
-    siehe Hinweis am Dateianfang. Fällt bei unbekanntem Format auf einen
-    Sammelordner zurück, statt falsch zu sortieren."""
-    if not date_str or len(date_str) < 7:
+def _year_month_prefix(date: datetime | None) -> str:
+    """Baut 'JJJJ/MM' aus dem von Docspell erkannten Beleg-Datum. Items ohne
+    erkanntes Datum landen in einem eigenen Sammelordner statt falsch
+    sortiert zu werden."""
+    if date is None:
         return "ohne-datum"
-    year, month = date_str[:4], date_str[5:7]
-    if not (year.isdigit() and month.isdigit()):
-        return "ohne-datum"
-    return f"{year}/{month}"
+    return f"{date:%Y}/{date:%m}"
 
 
 def main() -> None:
@@ -97,17 +91,27 @@ def main() -> None:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         manifest_lines = ["jahr/monat;item_id;name;correspondent;date;tags"]
         for r in results:
-            try:
-                content = client.download_original(r.item_id)
-            except Exception:
-                log.exception("Download fehlgeschlagen für Item %s (%s) — übersprungen", r.item_id, r.name)
-                continue
             prefix = _year_month_prefix(r.date)
-            safe_name = f"{prefix}/{r.date or 'ohne-datum'}_{r.item_id}_{r.name or 'beleg'}.pdf"
-            zf.writestr(safe_name, content)
-            manifest_lines.append(
-                f"{prefix};{r.item_id};{r.name};{r.correspondent or ''};{r.date or ''};{'|'.join(r.tags)}"
-            )
+            date_label = f"{r.date:%Y-%m-%d}" if r.date else "ohne-datum"
+            if not r.attachments:
+                log.warning("Item %s (%s) hat keine Attachments, übersprungen", r.item_id, r.name)
+                continue
+            for att in r.attachments:
+                try:
+                    content = client.download_original(att.id)
+                except Exception:
+                    log.exception(
+                        "Download fehlgeschlagen für Attachment %s (Item %s, %s) — übersprungen",
+                        att.id,
+                        r.item_id,
+                        r.name,
+                    )
+                    continue
+                safe_name = f"{prefix}/{date_label}_{r.item_id}_{att.name or r.name or 'beleg'}.pdf"
+                zf.writestr(safe_name, content)
+                manifest_lines.append(
+                    f"{prefix};{r.item_id};{att.name or r.name};{r.correspondent or ''};{date_label};{'|'.join(r.tags)}"
+                )
         zf.writestr("manifest.csv", "\n".join(manifest_lines))
 
     out_path = Path(args.out)

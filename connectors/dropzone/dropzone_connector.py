@@ -6,11 +6,13 @@ sowie für den manuellen Amazon-Business-Bulk-Export.
 
 Zwei Unterordner statt einem, weil die Firma zwischen empfangenen Belegen
 (Eingang: Einkäufe/Lieferantenrechnungen) und selbst gestellten Rechnungen
-(Ausgang: Rechnungen an eigene Kunden) unterscheidet — beide landen im
-gleichnamigen Zweig des Jahr/Eingang-oder-Ausgang/Monat-Ordnerbaums unter
-./data/belege-nach-monat (siehe common/monthly_mirror.py):
-  /dropzone/eingang/  -> ./data/belege-nach-monat/<Jahr>/Eingang/<Monat>/
-  /dropzone/ausgang/  -> ./data/belege-nach-monat/<Jahr>/Ausgang/<Monat>/
+(Ausgang: Rechnungen an eigene Kunden) unterscheidet — als Tag "Eingang"/
+"Ausgang" an Docspell mitgegeben. Die Einsortierung in den Jahr/Monat-
+Ordnerbaum unter ./data/belege-nach-monat übernimmt NICHT dieser Connector,
+sondern der separate, periodisch laufende connector-mirror-sync (siehe
+connectors/mirror-sync/mirror_sync.py) — der liest das tatsächliche, von
+Docspells OCR erkannte Beleg-Datum aus, statt hier beim Upload nur die
+Datei-mtime zu raten.
 
 Kein Cloud-Dienst nötig: Syncthing synct direkt zwischen Handy und diesem
 Server, ohne Zwischenstation bei einem Dritt-Anbieter — siehe README in
@@ -29,7 +31,6 @@ import os
 import shutil
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 # Im Docker-Image liegt "common/" direkt neben dieser Datei (vom Dockerfile so
@@ -42,7 +43,6 @@ for _candidate in (_here, _here.parent):
         break
 
 from common.docspell_client import DocspellClient, DocspellMeta  # noqa: E402
-from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
 from common.notify import notify  # noqa: E402
 from common.state import ProcessedStore  # noqa: E402
 
@@ -51,7 +51,6 @@ log = logging.getLogger("dropzone-connector")
 
 DROPZONE_DIR = Path("/dropzone")
 STATE_DB = Path("/state/dropzone.sqlite3")
-MONTHLY_MIRROR_DIR = Path("/monthly")
 
 # (Unterordnername, Docspell-/Mirror-"kind")
 WATCHED_SUBDIRS = [("eingang", "Eingang"), ("ausgang", "Ausgang")]
@@ -87,18 +86,10 @@ def _process_subdir(subdir_name: str, kind: str, store: ProcessedStore, client: 
         if store.is_processed(source_tag, file_hash):
             continue
 
-        # Datei-mtime statt "jetzt" fürs Einsortieren: bei Handy-Fotos, die per
-        # Syncthing synct werden, bleibt i.d.R. das Aufnahmedatum als mtime
-        # erhalten (Syncthing überträgt Zeitstempel mit) — deutlich näher am
-        # echten Beleg-Datum als der Zeitpunkt, an dem der Connector zufällig
-        # gerade den Ordner abläuft.
-        mirror_date = datetime.fromtimestamp(path.stat().st_mtime)
-
         content = path.read_bytes()
         meta = DocspellMeta(tags=["Manuell", "Unsortiert", kind], folder="Manuell")
         if client.upload(path.name, content, meta):
             store.mark_processed(source_tag, file_hash)
-            mirror_to_month_folder(MONTHLY_MIRROR_DIR, path.name, content, when=mirror_date, kind=kind)
             shutil.move(str(path), str(processed_dir / path.name))
             log.info("Verarbeitet (%s): %s", kind, path.name)
         else:
