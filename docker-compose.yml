@@ -58,6 +58,15 @@ services:
     # kleinen NAS-Systemen. Bei mehr verfügbarem RAM einfach erhöhen.
     environment:
       SOLR_HEAP: 384m
+      # Docspells Schema-Migration braucht für das Khmer-Feld
+      # solr.ICUTokenizerFactory aus dem Solr-Contrib-Modul "analysis-extras",
+      # das im Standard-Image nicht geladen ist. Ohne das bricht die
+      # Volltext-Index-Migration bei jedem Durchlauf endgültig an dieser
+      # Stelle ab (alle folgenden Schritte inkl. der Versions-Markierung
+      # werden nie erreicht, daher startet sie bei jedem joex-Neustart von
+      # vorn) — betrifft nur Khmer, Deutsch/Englisch/Französisch etc. laufen
+      # unabhängig davon normal.
+      SOLR_MODULES: analysis-extras
     command: ["solr-precreate", "docspell"]
     volumes:
       - ./data/solr:/var/solr
