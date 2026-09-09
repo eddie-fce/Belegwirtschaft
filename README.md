@@ -146,9 +146,16 @@ Zwei Ablagen laufen parallel, mit unterschiedlichem Zweck:
    sortiert — nicht aus einer Näherung beim Upload. Dadurch landet ein Beleg
    automatisch an der richtigen Stelle, auch wenn Docspell das Datum erst
    nach dem Hochladen erkennt oder du es später in der Oberfläche korrigierst
-   (der nächste Sync-Lauf verschiebt die Datei dann nach). Items, für die
-   (noch) kein Datum erkannt wurde, landen sichtbar unter
-   `ohne-datum/<Eingang oder Ausgang>/`, statt geraten zu werden. Das ist die
+   (der nächste Sync-Lauf verschiebt die Datei dann nach). Docspells eigene
+   Erkennung ist bei maschinell erzeugten Belegen (z.B. DHL/Post-
+   Frankierbestätigungen) live nachweislich unzuverlässig — dafür gibt es
+   einen zusätzlichen, eigenen Fallback
+   ([`connectors/common/date_extract.py`](connectors/common/date_extract.py)),
+   der gezielt nach einem Datum neben einem erkennbaren Label
+   ("Rechnungsdatum", "Datum", "Invoice date", ...) im OCR-Text sucht und
+   Treffer zurück nach Docspell schreibt. Items, für die auch das nichts
+   findet, landen sichtbar unter `ohne-datum/<Eingang oder Ausgang>/`, statt
+   geraten zu werden. Das ist die
    Struktur, die dein Steuerberater direkt per Netzwerkfreigabe/File Station
    durchsuchen kann, ganz ohne Docspell-Login — und zwar für **alle** Items
    der Collective, auch die direkt in Docspells Web-UI hochgeladenen (der
