@@ -29,7 +29,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import requests
 
@@ -161,6 +161,38 @@ class DocspellQueryClient:
                 f"Item-Detail für {item_id} fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
             )
         return _parse_epoch_ms(resp.json().get("itemDate"))
+
+    def get_extracted_text(self, attachment_id: str) -> str:
+        """Der von Docspell per OCR erkannte Text eines Attachments — Basis
+        für den eigenen Datums-Fallback (siehe common/date_extract.py), wenn
+        Docspells eigene Erkennung nichts liefert."""
+        resp = self._get(f"/api/v1/sec/attachment/{attachment_id}/extracted-text", {})
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Extrahierter Text für Attachment {attachment_id} fehlgeschlagen "
+                f"({resp.status_code}): {resp.text[:300]}"
+            )
+        return resp.json().get("text") or ""
+
+    def set_item_date(self, item_id: str, when: date) -> None:
+        """Schreibt ein Datum als Docspells eigenes itemDate zurück (PUT
+        .../item/{id}/date, Body {"date": <epoch-ms>}) — genutzt, wenn unser
+        eigener Datums-Fallback (date_extract.py) etwas findet, das
+        Docspells eigene Erkennung übersehen hat. Damit ist die Korrektur
+        auch in Docspells Oberfläche sichtbar und muss beim nächsten
+        Sync-Lauf nicht erneut extrahiert werden."""
+        midnight_utc = datetime(when.year, when.month, when.day, tzinfo=timezone.utc)
+        epoch_ms = int(midnight_utc.timestamp() * 1000)
+        resp = self.session.put(
+            f"{self.base_url}/api/v1/sec/item/{item_id}/date",
+            headers=self._headers(),
+            json={"date": epoch_ms},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Datum setzen für Item {item_id} fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
+            )
 
     def download_original(self, attachment_id: str) -> bytes:
         resp = self.session.get(

@@ -19,7 +19,7 @@ Sichtbarkeits-Kopie fürs Dateisystem.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -32,7 +32,7 @@ def mirror(
     base_dir: Path,
     filename: str,
     content: bytes,
-    when: datetime | None,
+    when: date | None,
     kind: Kind = "Eingang",
 ) -> Path:
     """Schreibt `content` unter base_dir/<Jahr>/<Eingang|Ausgang>/<Monat>/<filename>,

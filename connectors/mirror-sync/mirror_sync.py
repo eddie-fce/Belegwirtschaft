@@ -47,7 +47,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import date
 from pathlib import Path
 
 # Im Docker-Image liegt "common/" direkt neben dieser Datei (vom Dockerfile so
@@ -59,6 +59,7 @@ for _candidate in (_here, _here.parent):
         sys.path.insert(0, str(_candidate))
         break
 
+from common.date_extract import extract_date  # noqa: E402
 from common.docspell_query import DocspellQueryClient  # noqa: E402
 from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
 from common.monthly_mirror import remove as remove_mirrored  # noqa: E402
@@ -76,7 +77,7 @@ def _kind(tags: list[str]) -> str:
     return "Ausgang" if "Ausgang" in tags else "Eingang"
 
 
-def _target_path(item_name: str, att_name: str | None, when: datetime | None, kind: str) -> Path:
+def _target_path(item_name: str, att_name: str | None, when: date | None, kind: str) -> Path:
     filename = att_name or item_name or "beleg.pdf"
     if when is not None:
         return MONTHLY_MIRROR_DIR / f"{when:%Y}" / kind / f"{when:%m}" / filename
@@ -101,6 +102,38 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
         except Exception:
             log.exception("Konnte echtes Datum für Item %s (%s) nicht laden", item.item_id, item.name)
             continue
+
+        # Fallback, falls Docspell selbst kein Datum erkannt hat: live
+        # bestätigt unzuverlässig bei maschinell erzeugten Belegen (siehe
+        # date_extract.py) — eigene, Label-gebundene Suche im OCR-Text
+        # probieren, bevor das Item im "ohne-datum"-Ordner landet. Bei
+        # Erfolg wird das Datum zusätzlich in Docspell zurückgeschrieben,
+        # damit es auch dort korrekt sichtbar ist und beim nächsten Lauf
+        # nicht erneut extrahiert werden muss.
+        if real_date is None and item.attachments:
+            try:
+                text = client.get_extracted_text(item.attachments[0].id)
+                found = extract_date(text)
+            except Exception:
+                log.exception(
+                    "Eigene Datumssuche fehlgeschlagen für Item %s (%s)", item.item_id, item.name
+                )
+                found = None
+            if found is not None:
+                try:
+                    client.set_item_date(item.item_id, found)
+                    real_date = found
+                    log.info(
+                        "Datum selbst erkannt und in Docspell gesetzt: %s -> %s",
+                        item.name,
+                        found,
+                    )
+                except Exception:
+                    log.exception(
+                        "Konnte selbst erkanntes Datum nicht in Docspell setzen für Item %s (%s)",
+                        item.item_id,
+                        item.name,
+                    )
 
         for att in item.attachments:
             seen_attachment_ids.add(att.id)

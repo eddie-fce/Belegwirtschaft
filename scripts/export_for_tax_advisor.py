@@ -28,10 +28,11 @@ import logging
 import os
 import sys
 import zipfile
-from datetime import datetime
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "connectors" / "common"))
+from date_extract import extract_date  # noqa: E402
 from docspell_query import DocspellQueryClient  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -49,13 +50,13 @@ def load_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-def _year_month_prefix(date: datetime | None) -> str:
+def _year_month_prefix(d: date | None) -> str:
     """Baut 'JJJJ/MM' aus dem von Docspell erkannten Beleg-Datum. Items ohne
     erkanntes Datum landen in einem eigenen Sammelordner statt falsch
     sortiert zu werden."""
-    if date is None:
+    if d is None:
         return "ohne-datum"
-    return f"{date:%Y}/{date:%m}"
+    return f"{d:%Y}/{d:%m}"
 
 
 def main() -> None:
@@ -100,6 +101,23 @@ def main() -> None:
             except Exception:
                 log.exception("Konnte echtes Datum für Item %s (%s) nicht laden", r.item_id, r.name)
                 real_date = None
+
+            # Fallback wie in connectors/mirror-sync/mirror_sync.py: Docspells
+            # eigene Erkennung ist bei maschinell erzeugten Belegen
+            # nachweislich unzuverlässig (siehe common/date_extract.py).
+            if real_date is None and r.attachments:
+                try:
+                    text = client.get_extracted_text(r.attachments[0].id)
+                    found = extract_date(text)
+                except Exception:
+                    found = None
+                if found is not None:
+                    try:
+                        client.set_item_date(r.item_id, found)
+                        real_date = found
+                    except Exception:
+                        log.exception("Konnte selbst erkanntes Datum nicht setzen für Item %s", r.item_id)
+
             prefix = _year_month_prefix(real_date)
             date_label = f"{real_date:%Y-%m-%d}" if real_date else "ohne-datum"
             if not r.attachments:
