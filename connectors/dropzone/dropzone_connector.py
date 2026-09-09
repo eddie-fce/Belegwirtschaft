@@ -87,7 +87,10 @@ def _process_subdir(subdir_name: str, kind: str, store: ProcessedStore, client: 
             continue
 
         content = path.read_bytes()
-        meta = DocspellMeta(tags=["Manuell", "Unsortiert", kind], folder="Manuell")
+        direction = "outgoing" if kind == "Ausgang" else "incoming"
+        meta = DocspellMeta(
+            tags=["Manuell", "Unsortiert", kind], folder="Manuell", direction=direction
+        )
         if client.upload(path.name, content, meta):
             store.mark_processed(source_tag, file_hash)
             shutil.move(str(path), str(processed_dir / path.name))

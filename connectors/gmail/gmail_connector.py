@@ -209,14 +209,16 @@ def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
             except Exception:
                 log.debug("Konnte Betrag aus Mailtext nicht extrahieren (Mail %s)", msg_id)
 
-            # Alle bisherigen Regeln sind Einkäufe/Lieferantenrechnungen — "Eingang".
-            # Für eine künftige Regel auf Ausgangsrechnungen (falls die Firma sich
-            # selbst Kopien per Mail zustellt) in sources.yaml "kind: Ausgang" setzen.
+            # Default "Eingang" (Einkäufe/Lieferantenrechnungen) — für
+            # Ausgangsrechnungen setzt eine Regel "kind: Ausgang" in
+            # sources.yaml (siehe Regel "eigene-ausgangsrechnung").
             kind = rule.get("kind", "Eingang")
+            direction = "outgoing" if kind == "Ausgang" else "incoming"
             meta = DocspellMeta(
                 correspondent=rule.get("correspondent"),
                 tags=[*rule.get("tags", []), kind],
                 folder=rule.get("folder"),
+                direction=direction,
             )
             ok_count = 0
             for filename, content in attachments:

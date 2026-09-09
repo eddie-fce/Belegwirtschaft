@@ -203,21 +203,29 @@ hineingekommen ist.
 ### Benachrichtigungen bei gestörten Connectors
 Jeder Connector zählt aufeinanderfolgende Fehlschläge (`connectors/common/state.py`)
 und schickt ab einer konfigurierbaren Schwelle (`*_ALERT_AFTER_FAILURES` in
-`.env`, Default 3) eine Push-Benachrichtigung über
-[ntfy](https://github.com/binwiederhier/ntfy) — z.B. bei einer nicht mehr
-abrufbaren Gmail-API. Ohne gesetzte `NTFY_URL`/`NTFY_TOPIC` in `.env` sind
-Benachrichtigungen einfach aus (kein Fehler). Am datenschutzfreundlichsten:
-ntfy selbst hosten statt ntfy.sh zu nutzen.
+`.env`, Default 3) eine Benachrichtigung — z.B. bei einer nicht mehr
+abrufbaren Gmail-API. Zwei unabhängig voneinander nutzbare Kanäle:
+- **Push** über [ntfy](https://github.com/binwiederhier/ntfy)
+  (`NTFY_URL`/`NTFY_TOPIC` in `.env`). Am datenschutzfreundlichsten: ntfy
+  selbst hosten statt ntfy.sh zu nutzen.
+- **E-Mail** per SMTP (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/
+  `NOTIFY_EMAIL_TO` in `.env`) — läuft über ein eigenes SMTP-Konto (z.B. ein
+  Gmail-"App-Passwort"), nicht über den nur-lesenden Gmail-Connector-Token.
+
+Ohne gesetzte Variablen ist der jeweilige Kanal einfach aus (kein Fehler).
 
 ### Backups
-`scripts/backup.sh` sichert Datenbank-Dump + `./data` client-seitig
-verschlüsselt per [restic](https://restic.net) auf ein Ziel eurer Wahl
-(externe Platte, NAS, auch ein Cloud-Bucket — die Verschlüsselung passiert
-*vor* dem Verlassen dieses Rechners, das Ziel muss also nicht vertrauenswürdig
-sein). Konfiguration über `RESTIC_REPOSITORY`/`RESTIC_PASSWORD` in `.env`.
-Einrichtung als täglicher Cron-Job ist im Skript-Kopf dokumentiert — bewusst
-nicht automatisch eingerichtet, damit nicht ungefragt in eure Systemd/Cron-
-Konfiguration eingegriffen wird.
+Der `backup`-Dienst (`docker compose run --rm backup`, kein Dauer-Dienst)
+sichert Datenbank-Dump + `./data` client-seitig verschlüsselt per
+[restic](https://restic.net) auf ein Ziel eurer Wahl (externe Platte, NAS,
+auch ein Cloud-Bucket — die Verschlüsselung passiert *vor* dem Verlassen
+dieses Rechners, das Ziel muss also nicht vertrauenswürdig sein).
+Containerisiert wie die Python-Connectors, da restic auf dieser NAS nicht
+ohne Weiteres nativ installierbar ist. Konfiguration über
+`RESTIC_REPOSITORY`/`RESTIC_PASSWORD` in `.env`. Einrichtung als täglicher
+Cron-Job ist im Kopf von [`scripts/backup.sh`](scripts/backup.sh)
+dokumentiert — bewusst nicht automatisch eingerichtet, damit nicht ungefragt
+in eure Cron-Konfiguration eingegriffen wird.
 
 ### Steuerberater-Export
 Läuft als On-Demand-Tool im Stack (kein Dauer-Dienst, kein Python auf der

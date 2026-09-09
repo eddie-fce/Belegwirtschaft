@@ -1,0 +1,19 @@
+# Build-Kontext ist das Projekt-Root (siehe docker-compose.yml, Service
+# "backup"). Kein eigenständig laufender Dienst — wird per Cron über
+# "docker compose run --rm backup" aufgerufen (siehe backup.sh-Kopfzeilen).
+#
+# restic ist auf dieser NAS (wie Python bei den Connectors) nicht ohne
+# Weiteres nativ installierbar — deshalb containerisiert statt direkt auf
+# dem Host laufen zu lassen, dann reicht ein Cronjob, der nur "docker
+# compose" selbst braucht.
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends restic postgresql-client ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY scripts/backup.sh .
+RUN chmod +x backup.sh
+
+ENTRYPOINT ["./backup.sh"]

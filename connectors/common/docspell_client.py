@@ -29,9 +29,12 @@ class DocspellMeta:
 
     correspondent: str | None = None
     tags: list[str] = dataclasses.field(default_factory=list)
-    # ISO-8601 Datum, z.B. "2026-03-01" — meist das E-Mail-/Bestelldatum
-    document_date: str | None = None
     folder: str | None = None
+    # "incoming" (Eingang, Default) oder "outgoing" (Ausgang) — Docspells
+    # eigenes Direction-Feld. Bisher immer fest auf "incoming" gesetzt, auch
+    # bei Ausgangsrechnungen (die Eingang/Ausgang-Unterscheidung lief bislang
+    # nur über die gleichnamigen Tags, siehe common/monthly_mirror.py).
+    direction: str = "incoming"
 
 
 class DocspellClient:
@@ -60,7 +63,7 @@ class DocspellClient:
         meta = meta or DocspellMeta()
         meta_json = {
             "multiple": False,
-            "direction": "incoming",
+            "direction": meta.direction,
         }
         if meta.folder:
             meta_json["folder"] = meta.folder

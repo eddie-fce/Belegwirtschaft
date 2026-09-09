@@ -227,6 +227,12 @@ services:
       GMAIL_ALERT_AFTER_FAILURES: ${GMAIL_ALERT_AFTER_FAILURES}
       NTFY_URL: ${NTFY_URL}
       NTFY_TOPIC: ${NTFY_TOPIC}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      NOTIFY_EMAIL_TO: ${NOTIFY_EMAIL_TO}
     volumes:
       - ./connectors/gmail/secrets:/secrets
       - ./config/sources.yaml:/config/sources.yaml:ro
@@ -252,6 +258,12 @@ services:
       DROPZONE_ALERT_AFTER_FAILURES: ${DROPZONE_ALERT_AFTER_FAILURES}
       NTFY_URL: ${NTFY_URL}
       NTFY_TOPIC: ${NTFY_TOPIC}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      NOTIFY_EMAIL_TO: ${NOTIFY_EMAIL_TO}
     volumes:
       - ${DROPZONE_HOST_PATH}:/dropzone
       - ./data/state:/state
@@ -286,6 +298,12 @@ services:
       MIRROR_SYNC_ALERT_AFTER_FAILURES: ${MIRROR_SYNC_ALERT_AFTER_FAILURES}
       NTFY_URL: ${NTFY_URL}
       NTFY_TOPIC: ${NTFY_TOPIC}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      NOTIFY_EMAIL_TO: ${NOTIFY_EMAIL_TO}
     volumes:
       - ./data/state:/state
       - ${MONTHLY_MIRROR_HOST_PATH}:/monthly
@@ -385,6 +403,38 @@ services:
       - ./data:/data
     networks:
       - internal
+
+  # Ebenfalls kein Dauer-Dienst: läuft nur, wenn per Cron aufgerufen (siehe
+  # scripts/backup.sh Kopfzeilen für den Cron-Eintrag). restic ist auf dieser
+  # NAS nicht ohne Weiteres nativ installierbar — deshalb containerisiert,
+  # analog zu den Python-Connectors.
+  #
+  # Aufruf: docker compose run --rm backup
+  backup:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.backup
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD}
+    volumes:
+      - ./data:/data
+      # Nur nötig, wenn RESTIC_REPOSITORY ein lokaler Dateipfad ist (Default,
+      # z.B. eine gemountete externe Platte). Bei einem Remote-Backend
+      # (s3:..., sftp:..., rest:...) diese Zeile entfernen — dann reicht das
+      # "internet"-Netzwerk unten.
+      - ${RESTIC_REPOSITORY}:${RESTIC_REPOSITORY}
+    networks:
+      - internal
+      - internet
+    depends_on:
+      db:
+        condition: service_healthy
 
 networks:
   # Docspell-Kern + DB + Solr reden nur miteinander, kein Internetzugriff nötig/erlaubt.
