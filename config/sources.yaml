@@ -9,6 +9,11 @@
 # Kunden stellt — z.B. falls eine eigene Kopie per Mail bei euch eingeht).
 # Steuert den Jahr/Eingang-oder-Ausgang/Monat-Ordnerbaum unter
 # ./data/belege-nach-monat, siehe README-Abschnitt "Nutzung im Alltag".
+#
+# Optionales Feld "label": überschreibt GMAIL_LABEL (Default "INBOX") aus
+# .env nur für diese eine Regel — z.B. "SENT" für selbst per Gmail
+# verschickte Ausgangsrechnungen (siehe Regel "eigene-ausgangsrechnung"
+# unten). Gmails Standard-Label-IDs: INBOX, SENT, DRAFT, SPAM, TRASH.
 
 rules:
   - name: amazon
@@ -45,6 +50,18 @@ rules:
     correspondent: null
     tags: ["Rechnung", "Unsortiert"]
     folder: "Sonstige"
+
+  - name: eigene-ausgangsrechnung
+    # Für Rechnungen, die ihr selbst per Gmail an Kunden verschickt (z.B. als
+    # PDF-Anhang) — durchsucht den "Gesendet"-Ordner statt INBOX (siehe
+    # "label" oben). Ergänzt den bisher rein manuellen Weg über
+    # ./data/dropzone/ausgang/ (siehe connectors/dropzone/README.md).
+    label: "SENT"
+    query: 'has:attachment (Rechnung OR Invoice OR Beleg) filename:pdf'
+    correspondent: null
+    tags: ["Rechnung", "Unsortiert"]
+    folder: "Ausgang"
+    kind: "Ausgang"
 
 # Whitelist statt Blacklist: nur Anhänge, die auf eines dieser Muster passen,
 # werden überhaupt hochgeladen — alles andere (Logos, Signaturbilder,

@@ -94,6 +94,13 @@ Docspell auf einen Blick, ob der von OCR erkannte Betrag zum tatsächlichen
 Rechnungsbetrag aus der Mail passt, ohne ein separates, fehleranfälliges
 Abgleich-Tool zu brauchen. Setup: [`connectors/gmail/README.md`](connectors/gmail/README.md).
 
+Durchsucht standardmäßig nur `INBOX` — eine Regel kann das per `label:` in
+`sources.yaml` überschreiben, z.B. `label: "SENT"` für selbst per Gmail
+verschickte Ausgangsrechnungen (Regel `eigene-ausgangsrechnung`, ergänzt den
+bisher rein manuellen Dropzone-Weg für Ausgangsrechnungen unten). Der
+readonly-Scope deckt auch den Gesendet-Ordner ab, keine erneute Autorisierung
+nötig.
+
 ### Amazon Business — manueller Bulk-Export, 1-2x im Jahr
 Kein Connector-Code: Amazon Business hat einen eingebauten Sammel-Export
 ("Business Analytics" → Berichte → Bestellungen → Zeitraum wählen →

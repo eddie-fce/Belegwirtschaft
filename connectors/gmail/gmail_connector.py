@@ -173,9 +173,13 @@ def fetch_email_text(service, msg_id: str) -> str:
 
 def run_once(service, store: ProcessedStore, client: DocspellClient) -> None:
     rules, allowed_patterns, ignore_patterns = load_rules()
-    label = os.environ.get("GMAIL_LABEL", "INBOX")
+    default_label = os.environ.get("GMAIL_LABEL", "INBOX")
 
     for rule in rules:
+        # Default INBOX (Eingang) - Regeln für selbst verschickte
+        # Ausgangsrechnungen setzen "label: SENT" in sources.yaml, um
+        # stattdessen den Gmail-"Gesendet"-Ordner zu durchsuchen.
+        label = rule.get("label", default_label)
         query = f'label:{label} {rule["query"]}'
         log.info("Regel '%s': Suche %r", rule["name"], query)
 
