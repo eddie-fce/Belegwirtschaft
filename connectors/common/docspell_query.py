@@ -4,8 +4,9 @@ Endpoint fürs Hochladen kennt.
 
 Gegen Docspells Scala-Quellcode verifiziert (github.com/docspell/docspell,
 Stand siehe ItemSearchPart.scala / AttachmentRoutes.scala / RItem.scala) —
-frühere Version dieser Datei war an vier Stellen falsch, seitdem korrigiert
-(die letzte davon erst live gegen eine laufende Instanz aufgefallen):
+frühere Version dieser Datei war an mehreren Stellen falsch, seitdem
+korrigiert (die meisten davon erst live gegen eine laufende Instanz
+aufgefallen):
 - Die Suche ist ein GET mit Query-String-Parametern (q/limit/offset), keine
   POST-Anfrage mit JSON-Body.
 - "date" kommt als Unix-Millisekunden-Zeitstempel (Integer, kann fehlen,
@@ -22,6 +23,12 @@ frühere Version dieser Datei war an vier Stellen falsch, seitdem korrigiert
   das echte, tatsächlich nullable Datum braucht (z.B. für die Monatsordner-
   Sortierung), muss get_item_detail() nutzen (Item-Detailsicht,
   GET /api/v1/sec/item/{id}, Feld "itemDate").
+- Ein abgelaufenes Token meldet Docspell nicht mit dem "üblichen" 401,
+  sondern mit 403 ("Authentication failed due expired authenticator.") —
+  der Retry-bei-401-Mechanismus griff deshalb nie, Fehler häuften sich bis
+  zur Alarmschwelle. Ausserdem hatten zwei Methoden (download_original,
+  set_item_date) den Retry-Mechanismus gar nicht erst genutzt, sondern
+  direkt die Session ohne Wiederholung angesprochen.
 """
 
 from __future__ import annotations
@@ -96,17 +103,24 @@ class DocspellQueryClient:
             self._login()
         return {"X-Docspell-Auth": self._token}
 
-    def _get(self, path: str, params: dict) -> requests.Response:
-        resp = self.session.get(
-            f"{self.base_url}{path}", headers=self._headers(), params=params, timeout=60
+    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        """Zentrale, authentifizierte Anfrage mit Retry-bei-abgelaufenem-Token
+        für ALLE Methoden dieser Klasse — nicht nur GET. Live aufgefallen:
+        Docspell meldet ein abgelaufenes Token nicht mit dem "üblichen" 401,
+        sondern mit 403 ("Authentication failed due expired authenticator."),
+        deshalb auf beide Codes reagieren."""
+        resp = self.session.request(
+            method, f"{self.base_url}{path}", headers=self._headers(), timeout=60, **kwargs
         )
-        if resp.status_code == 401:
-            # Token abgelaufen — einmal neu einloggen und erneut versuchen.
+        if resp.status_code in (401, 403):
             self._token = None
-            resp = self.session.get(
-                f"{self.base_url}{path}", headers=self._headers(), params=params, timeout=60
+            resp = self.session.request(
+                method, f"{self.base_url}{path}", headers=self._headers(), timeout=60, **kwargs
             )
         return resp
+
+    def _get(self, path: str, params: dict) -> requests.Response:
+        return self._request("GET", path, params=params)
 
     def search(self, query: str, page_size: int = 200) -> list[SearchResult]:
         """query ist Docspells eigene Such-DSL, leerer String = alle (nicht im
@@ -207,23 +221,14 @@ class DocspellQueryClient:
         Sync-Lauf nicht erneut extrahiert werden."""
         midnight_utc = datetime(when.year, when.month, when.day, tzinfo=timezone.utc)
         epoch_ms = int(midnight_utc.timestamp() * 1000)
-        resp = self.session.put(
-            f"{self.base_url}/api/v1/sec/item/{item_id}/date",
-            headers=self._headers(),
-            json={"date": epoch_ms},
-            timeout=30,
-        )
+        resp = self._request("PUT", f"/api/v1/sec/item/{item_id}/date", json={"date": epoch_ms})
         if resp.status_code != 200:
             raise RuntimeError(
                 f"Datum setzen für Item {item_id} fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
             )
 
     def download_original(self, attachment_id: str) -> bytes:
-        resp = self.session.get(
-            f"{self.base_url}/api/v1/sec/attachment/{attachment_id}/original",
-            headers=self._headers(),
-            timeout=60,
-        )
+        resp = self._request("GET", f"/api/v1/sec/attachment/{attachment_id}/original")
         if resp.status_code != 200:
             raise RuntimeError(
                 f"Download für Attachment {attachment_id} fehlgeschlagen ({resp.status_code})"
