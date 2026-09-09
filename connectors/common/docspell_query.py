@@ -20,7 +20,7 @@ frühere Version dieser Datei war an vier Stellen falsch, seitdem korrigiert
   Docspell erkanntes Datum liefert dort trotzdem einen Wert (das Upload-/
   Verarbeitungsdatum), nicht unterscheidbar von einem echten Treffer. Wer
   das echte, tatsächlich nullable Datum braucht (z.B. für die Monatsordner-
-  Sortierung), muss get_item_date() nutzen (Item-Detailsicht,
+  Sortierung), muss get_item_detail() nutzen (Item-Detailsicht,
   GET /api/v1/sec/item/{id}, Feld "itemDate").
 """
 
@@ -54,6 +54,12 @@ class SearchResult:
     date: datetime | None
     tags: list[str]
     attachments: list[Attachment]
+
+
+@dataclasses.dataclass
+class ItemDetailInfo:
+    item_date: datetime | None
+    source_names: dict[str, str]  # attachment_id -> ursprünglicher Dateiname
 
 
 class DocspellQueryClient:
@@ -145,22 +151,40 @@ class DocspellQueryClient:
             offset += page_size
         return results
 
-    def get_item_date(self, item_id: str) -> datetime | None:
-        """Das ECHTE, von Docspell erkannte (oder in der Oberfläche manuell
-        gesetzte) Beleg-Datum — im Unterschied zum "date"-Feld der Such-/
-        Listenansicht (search()): das liefert serverseitig IMMER einen Wert
-        zurück, auch wenn nie eines erkannt wurde (Postgres-Query verwendet
+    def get_item_detail(self, item_id: str) -> ItemDetailInfo:
+        """Item-Detailsicht in einem Rutsch: das ECHTE, von Docspell erkannte
+        (oder in der Oberfläche manuell gesetzte) Beleg-Datum, sowie die
+        ursprünglichen Original-Dateinamen je Attachment.
+
+        Datum: im Unterschied zum "date"-Feld der Such-/Listenansicht
+        (search()) — das liefert serverseitig IMMER einen Wert zurück, auch
+        wenn nie eines erkannt wurde (Postgres-Query verwendet
         coalesce(itemDate, created), siehe QItem.scala) — dann eben das
         Upload-/Verarbeitungsdatum, von aussen nicht unterscheidbar von einem
         echten Treffer. Die Item-Detailsicht dagegen liefert das rohe,
         tatsächlich nullable "itemDate"-Feld. Für die Monatsordner-Sortierung
-        muss deshalb dieser Weg genutzt werden, nicht SearchResult.date."""
+        muss deshalb dieser Weg genutzt werden, nicht SearchResult.date.
+
+        Dateinamen: Docspell benennt ein Attachment nach seiner internen
+        PDF-Normalisierung/-Reparatur in "<name>.converted.pdf" um (läuft bei
+        praktisch jedem Anhang, auch bereits-PDFs) — Attachment.name (aus
+        search()) trägt diesen Namen. Der "sources"-Eintrag der Detailsicht
+        (gleiche ID wie das Attachment) behält dagegen den echten
+        Original-Dateinamen. download_original() liefert ohnehin bereits die
+        echten Original-Bytes (findAttachmentSource in Docspells
+        Quellcode) — nur der Name muss hier separat geholt werden."""
         resp = self._get(f"/api/v1/sec/item/{item_id}", {})
         if resp.status_code != 200:
             raise RuntimeError(
                 f"Item-Detail für {item_id} fehlgeschlagen ({resp.status_code}): {resp.text[:300]}"
             )
-        return _parse_epoch_ms(resp.json().get("itemDate"))
+        data = resp.json()
+        source_names = {
+            s["id"]: s["name"] for s in data.get("sources", []) if s.get("name")
+        }
+        return ItemDetailInfo(
+            item_date=_parse_epoch_ms(data.get("itemDate")), source_names=source_names
+        )
 
     def get_extracted_text(self, attachment_id: str) -> str:
         """Der von Docspell per OCR erkannte Text eines Attachments — Basis

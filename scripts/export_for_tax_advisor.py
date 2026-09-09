@@ -95,12 +95,15 @@ def main() -> None:
             # r.date kommt aus der Suche und ist serverseitig
             # coalesce(itemDate, created) - liefert also auch ohne von
             # Docspell erkanntes Datum einen Wert. Das echte, nullable
-            # Datum gibt es nur über die Item-Detailsicht.
+            # Datum (und die echten Original-Dateinamen, siehe unten) gibt
+            # es nur über die Item-Detailsicht.
             try:
-                real_date = client.get_item_date(r.item_id)
+                detail = client.get_item_detail(r.item_id)
+                real_date = detail.item_date
             except Exception:
-                log.exception("Konnte echtes Datum für Item %s (%s) nicht laden", r.item_id, r.name)
+                log.exception("Konnte Item-Detail für %s (%s) nicht laden", r.item_id, r.name)
                 real_date = None
+                detail = None
 
             # Fallback wie in connectors/mirror-sync/mirror_sync.py: Docspells
             # eigene Erkennung ist bei maschinell erzeugten Belegen
@@ -134,10 +137,11 @@ def main() -> None:
                         r.name,
                     )
                     continue
-                safe_name = f"{prefix}/{date_label}_{r.item_id}_{att.name or r.name or 'beleg'}.pdf"
+                att_name = (detail.source_names.get(att.id) if detail else None) or att.name
+                safe_name = f"{prefix}/{date_label}_{r.item_id}_{att_name or r.name or 'beleg'}.pdf"
                 zf.writestr(safe_name, content)
                 manifest_lines.append(
-                    f"{prefix};{r.item_id};{att.name or r.name};{r.correspondent or ''};{date_label};{'|'.join(r.tags)}"
+                    f"{prefix};{r.item_id};{att_name or r.name};{r.correspondent or ''};{date_label};{'|'.join(r.tags)}"
                 )
         zf.writestr("manifest.csv", "\n".join(manifest_lines))
 
