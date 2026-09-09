@@ -2,15 +2,14 @@
 # "backup"). Kein eigenständig laufender Dienst — wird per Cron über
 # "docker compose run --rm backup" aufgerufen (siehe backup.sh-Kopfzeilen).
 #
-# restic ist auf dieser NAS (wie Python bei den Connectors) nicht ohne
-# Weiteres nativ installierbar — deshalb containerisiert statt direkt auf
-# dem Host laufen zu lassen, dann reicht ein Cronjob, der nur "docker
-# compose" selbst braucht.
-FROM debian:bookworm-slim
+# Basis-Image bewusst dasselbe wie der "db"-Dienst (postgres:16-alpine),
+# NICHT ein generisches Debian/Ubuntu mit "postgresql-client" — Debian
+# bookworms Standardpaket liefert nur pg_dump 15, das verweigert den Dump
+# von einem neueren (16er) Server ("server version mismatch"). So ist
+# pg_dump garantiert zur selben Server-Version passend.
+FROM postgres:16-alpine
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends restic postgresql-client ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache restic
 
 WORKDIR /app
 COPY scripts/backup.sh .
