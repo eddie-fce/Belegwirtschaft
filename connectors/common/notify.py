@@ -46,8 +46,10 @@ def _notify_ntfy(title: str, message: str, priority: str) -> None:
 
 def _notify_email(title: str, message: str) -> None:
     host = os.environ.get("SMTP_HOST")
-    to_addr = os.environ.get("NOTIFY_EMAIL_TO")
-    if not host or not to_addr:
+    # Mehrere Empfänger durch Komma getrennt, z.B.
+    # "edwin@gmail.com, benedikt@gmail.com"
+    to_addrs = [a.strip() for a in os.environ.get("NOTIFY_EMAIL_TO", "").split(",") if a.strip()]
+    if not host or not to_addrs:
         return
 
     port = int(os.environ.get("SMTP_PORT", "587"))
@@ -58,13 +60,13 @@ def _notify_email(title: str, message: str) -> None:
     msg = MIMEText(message, "plain", "utf-8")
     msg["Subject"] = f"[Belegwirtschaft] {title}"
     msg["From"] = from_addr
-    msg["To"] = to_addr
+    msg["To"] = ", ".join(to_addrs)
 
     try:
         with smtplib.SMTP(host, port, timeout=15) as server:
             server.starttls()
             if user and password:
                 server.login(user, password)
-            server.sendmail(from_addr, [to_addr], msg.as_string())
+            server.sendmail(from_addr, to_addrs, msg.as_string())
     except Exception:
         log.exception("Konnte E-Mail-Benachrichtigung nicht senden (SMTP-Zugangsdaten prüfen?)")
