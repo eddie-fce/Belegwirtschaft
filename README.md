@@ -101,6 +101,11 @@ bisher rein manuellen Dropzone-Weg für Ausgangsrechnungen unten). Der
 readonly-Scope deckt auch den Gesendet-Ordner ab, keine erneute Autorisierung
 nötig.
 
+Erfasst neben PDFs auch CSV-Anhänge (Regel `kontoauszuege`) — für
+Kontoauszüge, die nur als CSV vorliegen. Die Suchbegriffe der Regel sind ein
+Startpunkt; falls eure Bank/PayPal andere Betreffzeilen nutzt, in
+`sources.yaml` mit dem Gmail-Suchfeld nachschärfen.
+
 ### Amazon Business — manueller Bulk-Export, 1-2x im Jahr
 Kein Connector-Code: Amazon Business hat einen eingebauten Sammel-Export
 ("Business Analytics" → Berichte → Bestellungen → Zeitraum wählen →
@@ -167,6 +172,16 @@ Zwei Ablagen laufen parallel, mit unterschiedlichem Zweck:
    durchsuchen kann, ganz ohne Docspell-Login — und zwar für **alle** Items
    der Collective, auch die direkt in Docspells Web-UI hochgeladenen (der
    Sync liest aus Docspell, nicht aus dem Upload-Weg).
+
+   **Mögliche Duplikate** (z.B. eine Rechnung einmal per Mail und einmal
+   manuell erneut hochgeladen — Docspells eigene Deduplizierung läuft nur
+   über exakte Datei-Hashes, hier sind es aber zwei unterschiedliche
+   Dateien mit demselben Inhalt): Items mit gleichem erkannten Beleg-Datum
+   und gleichem aus dem Text erkannten Betrag landen automatisch unter
+   `<Jahr>/Duplikate/<Eingang oder Ausgang>/` statt am normalen Platz —
+   nichts wird dabei in Docspell gelöscht, nur zur manuellen Prüfung
+   aussortiert. Ohne erkannten Betrag wird nie aussortiert (lieber ein
+   übersehenes Duplikat als ein fälschlich aussortierter echter Beleg).
 
 Für eine einmalige ZIP-Zusammenfassung eines Zeitraums (z.B. um sie per Mail
 zu verschicken) gibt es zusätzlich den

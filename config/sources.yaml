@@ -63,13 +63,28 @@ rules:
     folder: "Ausgang"
     kind: "Ausgang"
 
+  - name: kontoauszuege
+    # Kontoauszüge liegen nur als CSV vor, nie als PDF — eigene Regel ohne
+    # "filename:pdf"-Einschränkung in der Suche (die anderen Regeln oben
+    # hätten eine reine CSV-Mail nie gefunden, selbst mit *.csv in der
+    # Anhang-Whitelist unten). Suchbegriffe sind ein Startpunkt — falls eure
+    # Bank/PayPal andere Betreffzeilen nutzt, mit dem Gmail-Suchfeld
+    # nachschärfen (siehe Tipp oben).
+    query: 'has:attachment (Kontoauszug OR Kontoumsatz OR Kontoumsätze OR Transaktionsbericht OR statement) filename:csv'
+    correspondent: null
+    tags: ["Kontoauszug"]
+    folder: "Kontoauszuege"
+
 # Whitelist statt Blacklist: nur Anhänge, die auf eines dieser Muster passen,
 # werden überhaupt hochgeladen — alles andere (Logos, Signaturbilder,
 # eingebettete Bilder/Tracking-Pixel ohne echten Dateinamen wie "inline", …)
 # wird ignoriert. Echte Rechnungen/Belege kommen praktisch immer als PDF an;
 # fotografierte Belege laufen ohnehin über den Dropzone-Connector, nicht Gmail.
+# *.csv für Kontoauszüge (siehe Regel "kontoauszuege" oben) — Docspell
+# braucht dafür keine OCR, Tika liest den Text direkt.
 allowed_attachment_patterns:
   - "*.pdf"
+  - "*.csv"
 
 # Zweite Stufe NACH der Whitelist oben: echte PDFs, die aber trotzdem keine
 # Belege sind — z.B. AGB/Widerruf/Datenschutz-PDFs, die manche Anbieter (Post/

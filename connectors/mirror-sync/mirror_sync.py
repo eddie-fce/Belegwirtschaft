@@ -39,14 +39,28 @@ Verhalten je Sync-Lauf:
   dem neuen Pfad neu geschrieben — keine Duplikate.
 - Wird ein Item in Docspell gelöscht (Papierkorb), verschwindet die
   gespiegelte Datei beim nächsten Lauf automatisch wieder.
+
+Mögliche Duplikate (z.B. eine Rechnung, die einmal per Mail und einmal
+manuell erneut hochgeladen wurde — Docspells eigene Deduplizierung
+erkennt das nicht, die läuft nur über exakte Datei-Hashes, hier sind es aber
+zwei unterschiedliche Dateien mit demselben Inhalt): Items mit gleichem
+erkannten Beleg-Datum UND gleichem aus dem Text erkannten Betrag (siehe
+common/amount_extract.py) gelten als wahrscheinliches Duplikat. Nichts wird
+gelöscht — von jeder Gruppe bleibt nur das älteste Item (kleinste Docspell-
+ID) am normalen Platz, alle anderen landen zur manuellen Prüfung unter
+<Jahr>/Duplikate/<Eingang|Ausgang>/. Ohne erkannten Betrag (z.B. schlechte
+OCR-Qualität) wird ein Item nie als Duplikat markiert — lieber ein
+übersehenes Duplikat als ein fälschlich aussortierter echter Beleg.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import sys
 import time
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -59,8 +73,9 @@ for _candidate in (_here, _here.parent):
         sys.path.insert(0, str(_candidate))
         break
 
+from common.amount_extract import extract_amount  # noqa: E402
 from common.date_extract import extract_date  # noqa: E402
-from common.docspell_query import DocspellQueryClient  # noqa: E402
+from common.docspell_query import DocspellQueryClient, ItemDetailInfo, SearchResult  # noqa: E402
 from common.monthly_mirror import mirror as mirror_to_month_folder  # noqa: E402
 from common.monthly_mirror import remove as remove_mirrored  # noqa: E402
 from common.notify import notify  # noqa: E402
@@ -73,22 +88,37 @@ STATE_DB = Path("/state/mirror-sync.sqlite3")
 MONTHLY_MIRROR_DIR = Path("/monthly")
 
 
+@dataclasses.dataclass
+class _ItemInfo:
+    item: SearchResult
+    kind: str
+    real_date: date | None
+    detail: ItemDetailInfo
+    amount_key: tuple[str, str] | None  # (betrag, währung) aus dem OCR-Text, falls erkannt
+
+
 def _kind(tags: list[str]) -> str:
     return "Ausgang" if "Ausgang" in tags else "Eingang"
 
 
-def _target_path(item_name: str, att_name: str | None, when: date | None, kind: str) -> Path:
+def _target_path(
+    item_name: str,
+    att_name: str | None,
+    when: date | None,
+    kind: str,
+    is_duplicate: bool = False,
+) -> Path:
     filename = att_name or item_name or "beleg.pdf"
+    if is_duplicate:
+        year = f"{when:%Y}" if when is not None else "ohne-datum"
+        return MONTHLY_MIRROR_DIR / year / "Duplikate" / kind / filename
     if when is not None:
         return MONTHLY_MIRROR_DIR / f"{when:%Y}" / kind / f"{when:%m}" / filename
     return MONTHLY_MIRROR_DIR / "ohne-datum" / kind / filename
 
 
-def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
-    results = client.search("")
-    seen_attachment_ids: set[str] = set()
-    new_count = moved_count = unchanged_count = failed_count = 0
-
+def _load_item_infos(client: DocspellQueryClient, results: list[SearchResult]) -> list[_ItemInfo]:
+    infos = []
     for item in results:
         kind = _kind(item.tags)
         # WICHTIG: item.date aus der Suche ist serverseitig
@@ -104,6 +134,15 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
             log.exception("Konnte Item-Detail für %s (%s) nicht laden", item.item_id, item.name)
             continue
 
+        # Einmal den OCR-Text laden — Basis sowohl für den Datums-Fallback
+        # als auch für die Duplikat-Erkennung über den erkannten Betrag.
+        text = None
+        if item.attachments:
+            try:
+                text = client.get_extracted_text(item.attachments[0].id)
+            except Exception:
+                log.debug("Konnte OCR-Text für Item %s (%s) nicht laden", item.item_id, item.name)
+
         # Fallback, falls Docspell selbst kein Datum erkannt hat: live
         # bestätigt unzuverlässig bei maschinell erzeugten Belegen (siehe
         # date_extract.py) — eigene, Label-gebundene Suche im OCR-Text
@@ -111,24 +150,13 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
         # Erfolg wird das Datum zusätzlich in Docspell zurückgeschrieben,
         # damit es auch dort korrekt sichtbar ist und beim nächsten Lauf
         # nicht erneut extrahiert werden muss.
-        if real_date is None and item.attachments:
-            try:
-                text = client.get_extracted_text(item.attachments[0].id)
-                found = extract_date(text)
-            except Exception:
-                log.exception(
-                    "Eigene Datumssuche fehlgeschlagen für Item %s (%s)", item.item_id, item.name
-                )
-                found = None
+        if real_date is None and text:
+            found = extract_date(text)
             if found is not None:
                 try:
                     client.set_item_date(item.item_id, found)
                     real_date = found
-                    log.info(
-                        "Datum selbst erkannt und in Docspell gesetzt: %s -> %s",
-                        item.name,
-                        found,
-                    )
+                    log.info("Datum selbst erkannt und in Docspell gesetzt: %s -> %s", item.name, found)
                 except Exception:
                     log.exception(
                         "Konnte selbst erkanntes Datum nicht in Docspell setzen für Item %s (%s)",
@@ -136,13 +164,49 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
                         item.name,
                     )
 
+        amount_key = extract_amount(text) if text else None
+        infos.append(_ItemInfo(item=item, kind=kind, real_date=real_date, detail=detail, amount_key=amount_key))
+    return infos
+
+
+def _find_duplicate_ids(infos: list[_ItemInfo]) -> set[str]:
+    """Gruppiert Items mit gleichem Datum + gleichem erkanntem Betrag.
+    Aus jeder Gruppe von 2+ bleibt nur das älteste Item (kleinste Docspell-
+    ID — Docspells IDs sind zeitlich sortierbare ULID-artige Strings) am
+    normalen Platz, der Rest gilt als Duplikat."""
+    groups: dict[tuple[date, str, str], list[str]] = defaultdict(list)
+    for info in infos:
+        if info.real_date is not None and info.amount_key is not None:
+            key = (info.real_date.date() if hasattr(info.real_date, "date") else info.real_date, *info.amount_key)
+            groups[key].append(info.item.item_id)
+
+    duplicate_ids: set[str] = set()
+    for ids in groups.values():
+        if len(ids) > 1:
+            primary = min(ids)
+            duplicate_ids.update(i for i in ids if i != primary)
+    return duplicate_ids
+
+
+def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
+    results = client.search("")
+    infos = _load_item_infos(client, results)
+    duplicate_ids = _find_duplicate_ids(infos)
+
+    seen_attachment_ids: set[str] = set()
+    new_count = moved_count = unchanged_count = failed_count = 0
+
+    for info in infos:
+        item, kind, real_date, detail = info.item, info.kind, info.real_date, info.detail
+        is_duplicate = item.item_id in duplicate_ids
+
         for att in item.attachments:
             seen_attachment_ids.add(att.id)
             # Echter Original-Dateiname statt des von Docspells interner
             # PDF-Normalisierung umbenannten Attachment-Namens (".converted"),
             # falls vorhanden.
             att_name = detail.source_names.get(att.id, att.name)
-            desired_path = _target_path(item.name, att_name, real_date, kind)
+            desired_path = _target_path(item.name, att_name, real_date, kind, is_duplicate)
             previous_path_str = store.get_mirrored_path(att.id)
 
             if previous_path_str == str(desired_path) and desired_path.exists():
@@ -182,12 +246,14 @@ def run_once(client: DocspellQueryClient, store: ProcessedStore) -> None:
 
     log.info(
         "Sync fertig: %d neu, %d verschoben (Datum geändert), %d unverändert, "
-        "%d entfernt (in Docspell gelöscht), %d Downloads fehlgeschlagen",
+        "%d entfernt (in Docspell gelöscht), %d Downloads fehlgeschlagen, "
+        "%d mögliche Duplikate",
         new_count,
         moved_count,
         unchanged_count,
         len(stale_ids),
         failed_count,
+        len(duplicate_ids),
     )
 
 
