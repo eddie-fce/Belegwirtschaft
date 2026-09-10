@@ -29,6 +29,14 @@ aufgefallen):
   zur Alarmschwelle. Ausserdem hatten zwei Methoden (download_original,
   set_item_date) den Retry-Mechanismus gar nicht erst genutzt, sondern
   direkt die Session ohne Wiederholung angesprochen.
+- Eine über viele Minuten offen gehaltene Keep-Alive-Verbindung (der
+  Client lebt über den gesamten Connector-Lebenszyklus, mit typisch 30 Min.
+  Pause zwischen zwei Läufen) wird von Docspell serverseitig irgendwann
+  geschlossen — der nächste Versuch, sie wiederzuverwenden, scheitert mit
+  "Connection aborted: Remote end closed connection without response".
+  Behoben über einen urllib3-Retry-Adapter auf der Session (siehe
+  __init__), der eine so gescheiterte Verbindung verwirft und automatisch
+  neu verbindet.
 """
 
 from __future__ import annotations
@@ -39,6 +47,8 @@ import os
 from datetime import date, datetime, timezone
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +91,25 @@ class DocspellQueryClient:
         self.password = password or os.environ["DOCSPELL_PASSWORD"]
         self._token: str | None = None
         self.session = requests.Session()
+        # mirror_sync.py hält diesen Client (und damit die Session) über den
+        # gesamten Container-Lebenszyklus, mit oft 30 Minuten Pause zwischen
+        # zwei Läufen — eine dabei offen gehaltene Keep-Alive-Verbindung wird
+        # von Docspell serverseitig irgendwann still geschlossen. Der nächste
+        # Versuch, sie wiederzuverwenden, scheitert dann mit
+        # "Connection aborted: Remote end closed connection without
+        # response" (live aufgefallen). Dieser Retry-Adapter verwirft eine
+        # so gescheiterte Verbindung automatisch und öffnet eine neue, statt
+        # den ganzen Lauf abzubrechen. HTTP-Status-Codes (401/403) behandeln
+        # wir weiterhin selbst in _request(), daher hier kein status_forcelist.
+        # allowed_methods=None schaltet urllib3s Default-Einschränkung ab, die
+        # POST NICHT als wiederholbar einstuft (wegen möglicher Doppel-
+        # Einreichung) — hier unproblematisch: bei einer bereits vom Server
+        # geschlossenen Verbindung ist nie ein Byte angekommen, unser
+        # Login-POST (_login) braucht den Retry aber genau deswegen.
+        retry = Retry(total=3, connect=3, read=2, backoff_factor=0.5, allowed_methods=None)
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
 
     def _login(self) -> str:
         resp = self.session.post(
